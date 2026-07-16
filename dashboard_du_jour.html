@@ -137,6 +137,22 @@
   @media (prefers-reduced-motion: reduce){
     *{ animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
   }
+  .quick-actions{ display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
+  .quick-btn{
+    display:flex; align-items:center; gap:10px;
+    background: var(--surface-2); border: 1px solid var(--hairline);
+    border-radius: 10px; padding: 12px 12px;
+    text-decoration:none; color: var(--text);
+    font-size: 13px; font-weight:500;
+    transition: border-color .15s, transform .1s;
+  }
+  .quick-btn:active{ transform: scale(0.97); }
+  .quick-btn:hover{ border-color: var(--amber); }
+  .quick-btn .dot{
+    width:7px; height:7px; border-radius:50%; flex-shrink:0;
+    background: var(--amber);
+  }
+  .quick-btn.sage .dot{ background: var(--sage); }
 </style>
 </head>
 <body>
@@ -182,6 +198,16 @@
       <div class="kv-row">
         <span>Dépensé (Whoop) <span class="kv-val mono" id="depenseVal">—</span></span>
         <span>Mangé <span class="kv-val mono" id="mangeVal">—</span></span>
+      </div>
+    </div>
+
+    <div class="card fade-in">
+      <p class="eyebrow">Actions rapides</p>
+      <div class="quick-actions">
+        <a class="quick-btn" href="shortcuts://run-shortcut?name=Log%20repas"><span class="dot"></span>Log repas</a>
+        <a class="quick-btn" href="shortcuts://run-shortcut?name=Log%20s%C3%A9ance"><span class="dot"></span>Log séance</a>
+        <a class="quick-btn sage" href="shortcuts://run-shortcut?name=Bilan%20IA"><span class="dot"></span>Bilan IA</a>
+        <a class="quick-btn sage" href="shortcuts://run-shortcut?name=Balance"><span class="dot"></span>Balance</a>
       </div>
     </div>
 
