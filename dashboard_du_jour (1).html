@@ -868,6 +868,7 @@ function parseExerciseEntries(seances){
       const kgMatches = [...rest.matchAll(/(\d+(?:[.,]\d+)?)\s*kg/gi)].map(x=>parseFloat(x[1].replace(',','.')));
       if(!kgMatches.length) return; // exercice au poids du corps, pas de charge à tracer
       const maxKg = Math.max(...kgMatches);
+      if(maxKg <= 0) return; // "0 kg" = poids du corps écrit explicitement, pas une vraie charge
       if(!index[name]) index[name] = [];
       index[name].push({ date: s['Date'], kg: maxKg });
     });
@@ -875,18 +876,41 @@ function parseExerciseEntries(seances){
   return index;
 }
 
+function categorizeExercise(name){
+  const n = name.toLowerCase();
+  if(/bent over row|rameur buste|seated row|face pull|pull.?down|lat pulldown/.test(n)) return 'Dos';
+  if(/militaire|overhead press|shoulder|epaule|épaule|shrug/.test(n)) return 'Épaules';
+  if(/bench press|push up|pompe|chest fly|bench fly|pec/.test(n)) return 'Poitrine';
+  if(/curl|tricep|bicep/.test(n)) return 'Bras';
+  if(/squat|leg press|lunge|deadlift|terre roumain|good morning|glute bridge|calf|mollet/.test(n)) return 'Jambes';
+  if(/plank|planche|crunch|abdo|twist|deadbug|sit up/.test(n)) return 'Abdos & Core';
+  if(/jump rope|corde.{0,3}sauter|^rowing$|bike erg|jumping jack|marche/.test(n)) return 'Cardio';
+  return 'Autre';
+}
+
 function renderProgressionSetup(data){
   const seances = data.seances || [];
   const index = parseExerciseEntries(seances);
   window.EXO_INDEX = index;
   const select = document.getElementById('exoSelect');
-  const names = Object.keys(index).sort((a,b)=> index[b].length - index[a].length);
+  const names = Object.keys(index);
   if(!names.length){
     select.innerHTML = '<option>Aucun exercice avec charge détecté</option>';
     document.getElementById('chartWrap').innerHTML = '<div class="chart-empty">Logge quelques séances avec des charges pour voir apparaître ta progression ici</div>';
     return;
   }
-  select.innerHTML = names.map(n=>`<option value="${n}">${n} (${index[n].length})</option>`).join('');
+  const groupOrder = ['Jambes','Poitrine','Dos','Épaules','Bras','Abdos & Core','Cardio','Autre'];
+  const grouped = {};
+  names.forEach(n=>{
+    const cat = categorizeExercise(n);
+    if(!grouped[cat]) grouped[cat] = [];
+    grouped[cat].push(n);
+  });
+  select.innerHTML = groupOrder.filter(g=>grouped[g]).map(g=>{
+    const opts = grouped[g].sort((a,b)=>index[b].length-index[a].length)
+      .map(n=>`<option value="${n}">${n} (${index[n].length})</option>`).join('');
+    return `<optgroup label="${g}">${opts}</optgroup>`;
+  }).join('');
   renderExoChart();
 }
 
