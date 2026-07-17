@@ -181,9 +181,72 @@
   #pinError{
     color: var(--rust); font-size: 13px; margin-top: 12px; min-height: 18px;
   }
+
+  /* Header extras */
+  .sync-label{ font-size:11px; color:var(--text-muted); margin-top:2px; }
+
+  /* Pull to refresh */
+  #pullIndicator{
+    position:fixed; top:0; left:50%; transform: translate(-50%,-40px);
+    width:34px; height:34px; border-radius:50%;
+    background: var(--surface); border:1px solid var(--hairline);
+    display:flex; align-items:center; justify-content:center;
+    color: var(--amber); z-index:50; transition: transform .15s, opacity .15s;
+    opacity:0;
+  }
+  #pullIndicator svg{ transition: transform .1s; }
+  #pullIndicator.ready{ color: var(--sage); }
+  #pullIndicator.spinning svg{ animation: spin .6s linear infinite; }
+
+  /* Vitals */
+  .vitals-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+  .vital{ background: var(--surface-2); border-radius:10px; padding:12px 6px; text-align:center; }
+  .vital .vital-ring{ position:relative; width:44px; height:44px; margin:0 auto 6px; }
+  .vital .vital-val{ font-size:14px; font-weight:600; }
+  .vital .vital-label{ font-size:9px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin-top:4px; }
+
+  /* Sparkline */
+  .sparkline-wrap{ margin-top:10px; }
+  .sparkline-wrap svg{ width:100%; height:36px; display:block; overflow:visible; }
+
+  /* Protein progress */
+  .progress-block{ margin-top:14px; }
+  .progress-head{ display:flex; justify-content:space-between; font-size:12px; color:var(--text-muted); margin-bottom:6px; }
+  .progress-head b{ color: var(--text); font-weight:600; }
+  .progress-track{ height:7px; border-radius:5px; background: var(--surface-2); overflow:hidden; }
+  .progress-fill{ height:100%; border-radius:5px; background: var(--amber); width:0%; transition: width 1s cubic-bezier(.16,1,.3,1); }
+  .progress-fill.done{ background: var(--sage); }
+
+  /* Recommandation pill card */
+  .reco-card{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
+  .reco-type{ font-size:16px; font-weight:600; }
+  .reco-sub{ font-size:11px; color:var(--text-muted); margin-top:2px; }
+  .reco-badge{
+    font-size:11px; font-weight:600; padding:5px 10px; border-radius:20px;
+    background: var(--surface-2); color: var(--amber); white-space:nowrap;
+  }
+
+  /* Bilan IA collapsible */
+  .bilan-toggle{
+    display:flex; align-items:center; justify-content:space-between;
+    cursor:pointer; user-select:none;
+  }
+  .bilan-toggle svg{ transition: transform .25s; color: var(--text-muted); flex-shrink:0; }
+  .bilan-toggle.open svg{ transform: rotate(180deg); }
+  .bilan-body{
+    max-height:0; overflow:hidden; transition: max-height .35s ease;
+    font-size:13px; line-height:1.55; color:var(--text-muted); white-space:pre-line;
+  }
+  .bilan-body.open{ margin-top:12px; }
+  .bilan-preview{ font-size:13px; color:var(--text-muted); line-height:1.45; margin-top:8px; }
+
+  .count-up{ transition: none; }
 </style>
 </head>
 <body>
+<div id="pullIndicator">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+</div>
 <div class="wrap">
 
   <div id="pinGate">
@@ -203,19 +266,41 @@
 
   <div id="app">
     <header>
-      <div class="date">Aujourd'hui · <span id="dateLabel"></span></div>
+      <div>
+        <div class="date">Aujourd'hui · <span id="dateLabel"></span></div>
+        <div class="sync-label" id="syncLabel"></div>
+      </div>
       <button id="refreshBtn" aria-label="Actualiser" onclick="load(true)">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
       </button>
     </header>
 
     <div class="card fade-in">
+      <p class="eyebrow">Vitals du jour</p>
+      <div class="vitals-grid">
+        <div class="vital">
+          <div class="vital-val mono" id="recupVal">—</div>
+          <div class="vital-label">Récup. %</div>
+        </div>
+        <div class="vital">
+          <div class="vital-val mono" id="strainVal">—</div>
+          <div class="vital-label">Strain</div>
+        </div>
+        <div class="vital">
+          <div class="vital-val mono" id="sommeilVal">—</div>
+          <div class="vital-label">Sommeil %</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card fade-in">
       <p class="eyebrow">Poids du jour</p>
       <div class="poids-row">
-        <span class="val mono" id="poidsVal">—</span>
+        <span class="val mono count-up" id="poidsVal">—</span>
         <span class="unit">kg</span>
       </div>
       <div class="poids-note" id="poidsNote"></div>
+      <div class="sparkline-wrap" id="sparklineWrap"></div>
     </div>
 
     <div class="card hero fade-in">
@@ -234,6 +319,17 @@
       <div class="kv-row">
         <span>Dépensé (Whoop) <span class="kv-val mono" id="depenseVal">—</span></span>
         <span>Mangé <span class="kv-val mono" id="mangeVal">—</span></span>
+      </div>
+    </div>
+
+    <div class="card fade-in" id="recoCard" style="display:none;">
+      <p class="eyebrow">Recommandation du jour</p>
+      <div class="reco-card">
+        <div>
+          <div class="reco-type" id="recoType">—</div>
+          <div class="reco-sub" id="recoSub"></div>
+        </div>
+        <div class="reco-badge" id="recoBadge"></div>
       </div>
     </div>
 
@@ -259,6 +355,22 @@
         <span>Total</span>
         <span class="kv-val mono" id="repasTotalVal"></span>
       </div>
+      <div class="progress-block">
+        <div class="progress-head">
+          <span>Objectif protéines</span>
+          <span><b class="mono count-up" id="protCurrentVal">0</b>g / 150g</span>
+        </div>
+        <div class="progress-track"><div class="progress-fill" id="protFill"></div></div>
+      </div>
+    </div>
+
+    <div class="card fade-in" id="bilanCard" style="display:none;">
+      <div class="bilan-toggle" id="bilanToggle" onclick="toggleBilan()">
+        <p class="eyebrow" style="margin:0;">Bilan IA du jour</p>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+      </div>
+      <div class="bilan-preview" id="bilanPreview"></div>
+      <div class="bilan-body" id="bilanBody"></div>
     </div>
   </div>
 
@@ -266,8 +378,8 @@
 
 <script>
 const WEBAPP_URL = "https://script.google.com/macros/s/AKfycbwPEJzv0wW9U7lnZs_q_8ZFhV8rXD1Af6PAEkADih_ycOUS5ombD0BR6Y31v5FLYBGQeQ/exec";
-const SECRET = "ro_view_9f3ab2";
-const PIN = "1122"; 
+const SECRET = "ro_view_9f3ab2"; // secret en LECTURE SEULE — ne permet aucune écriture même s'il fuite
+const PIN = "0000"; // ⚠️ CHANGE CE CODE avant de mettre en ligne — choisis 4 chiffres personnels
 
 function checkPin(){
   const input = document.getElementById('pinInput');
@@ -303,6 +415,72 @@ function num(v){
   return isNaN(n) ? null : n;
 }
 
+function countUp(el, target, decimals){
+  decimals = decimals || 0;
+  const start = 0;
+  const duration = 700;
+  const t0 = performance.now();
+  function tick(now){
+    const p = Math.min(1, (now - t0) / duration);
+    const eased = 1 - Math.pow(1 - p, 3);
+    el.textContent = (start + (target - start) * eased).toFixed(decimals);
+    if(p < 1) requestAnimationFrame(tick);
+    else el.textContent = target.toFixed(decimals);
+  }
+  requestAnimationFrame(tick);
+}
+
+function toggleBilan(){
+  const toggle = document.getElementById('bilanToggle');
+  const body = document.getElementById('bilanBody');
+  const preview = document.getElementById('bilanPreview');
+  const isOpen = body.classList.contains('open');
+  if(isOpen){
+    body.classList.remove('open');
+    body.style.maxHeight = null;
+    preview.style.display = 'block';
+  } else {
+    preview.style.display = 'none';
+    body.classList.add('open');
+    body.style.maxHeight = body.scrollHeight + 'px';
+  }
+  toggle.classList.toggle('open');
+}
+
+// --- Pull to refresh ---
+let pullStartY = null;
+const pullIndicator = document.getElementById('pullIndicator');
+document.addEventListener('touchstart', e => {
+  if(window.scrollY === 0) pullStartY = e.touches[0].clientY;
+}, { passive:true });
+document.addEventListener('touchmove', e => {
+  if(pullStartY === null) return;
+  const dy = e.touches[0].clientY - pullStartY;
+  if(dy > 0 && window.scrollY === 0){
+    const dist = Math.min(dy, 90);
+    pullIndicator.style.opacity = Math.min(1, dist / 60);
+    pullIndicator.style.transform = `translate(-50%, ${dist - 40}px) rotate(${dist * 2}deg)`;
+    pullIndicator.classList.toggle('ready', dist > 55);
+  }
+}, { passive:true });
+document.addEventListener('touchend', e => {
+  if(pullStartY === null) return;
+  if(pullIndicator.classList.contains('ready')){
+    pullIndicator.classList.add('spinning');
+    pullIndicator.style.transform = 'translate(-50%, 14px)';
+    load(false).then ? load(false) : load(false);
+    setTimeout(() => {
+      pullIndicator.classList.remove('spinning','ready');
+      pullIndicator.style.opacity = 0;
+      pullIndicator.style.transform = 'translate(-50%, -40px)';
+    }, 700);
+  } else {
+    pullIndicator.style.opacity = 0;
+    pullIndicator.style.transform = 'translate(-50%, -40px)';
+  }
+  pullStartY = null;
+}, { passive:true });
+
 async function load(isManual){
   const btn = document.getElementById('refreshBtn');
   if(isManual){ btn.classList.add('spin'); setTimeout(()=>btn.classList.remove('spin'), 600); }
@@ -316,6 +494,8 @@ async function load(isManual){
     const data = await res.json();
     if(data.error) throw new Error(data.error);
     render(data);
+    const now = new Intl.DateTimeFormat('fr-FR', { hour:'2-digit', minute:'2-digit', timeZone:'Europe/Paris' }).format(new Date());
+    document.getElementById('syncLabel').textContent = `Mis à jour à ${now}`;
   }catch(err){
     document.getElementById('loadingState').style.display = 'none';
     document.getElementById('errorState').style.display = 'block';
@@ -331,13 +511,21 @@ function render(data){
   const health = data.health || [];
   const seances = data.seances || [];
   const repasLog = data.repas_log || [];
+  const recommandation = data.recommandation || [];
+  const bilans = data.bilans || [];
+
+  // --- Vitals du jour ---
+  const whoopTodayVitals = whoop.find(w => w['Date'] === today);
+  document.getElementById('recupVal').textContent = whoopTodayVitals && whoopTodayVitals['Récupération %'] !== '' ? Math.round(whoopTodayVitals['Récupération %']) : '—';
+  document.getElementById('strainVal').textContent = whoopTodayVitals && whoopTodayVitals['Strain Jour'] !== '' ? whoopTodayVitals['Strain Jour'] : '—';
+  document.getElementById('sommeilVal').textContent = whoopTodayVitals && whoopTodayVitals['Sommeil Perf %'] !== '' ? Math.round(whoopTodayVitals['Sommeil Perf %']) : '—';
 
   // --- Poids du jour (avec repli sur la dernière valeur connue) ---
   let poidsEntry = health.slice().reverse().find(r => r['Poids'] !== '' && r['Poids'] !== undefined);
   const poidsVal = document.getElementById('poidsVal');
   const poidsNote = document.getElementById('poidsNote');
   if(poidsEntry){
-    poidsVal.textContent = num(poidsEntry['Poids']).toFixed(1);
+    countUp(poidsVal, num(poidsEntry['Poids']), 1);
     if(poidsEntry['Date'] !== today){
       poidsNote.textContent = `Dernière mesure : ${fmtDateLabel(poidsEntry['Date'])}`;
     } else {
@@ -346,6 +534,39 @@ function render(data){
   } else {
     poidsVal.textContent = '—';
     poidsNote.textContent = 'Aucune donnée disponible';
+  }
+
+  // --- Sparkline poids (14 derniers jours avec donnée) ---
+  const poidsSeries = health.filter(r => r['Poids'] !== '' && r['Poids'] !== undefined).map(r => num(r['Poids']));
+  const sparkWrap = document.getElementById('sparklineWrap');
+  if(poidsSeries.length >= 2){
+    const w = 300, h = 36, pad = 3;
+    const min = Math.min(...poidsSeries), max = Math.max(...poidsSeries);
+    const range = (max - min) || 1;
+    const pts = poidsSeries.map((v,i) => {
+      const x = pad + (i / (poidsSeries.length - 1)) * (w - pad*2);
+      const y = h - pad - ((v - min) / range) * (h - pad*2);
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(' ');
+    const lastPt = pts.split(' ').pop().split(',');
+    sparkWrap.innerHTML = `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
+      <polyline points="${pts}" fill="none" stroke="#E8A33D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="${lastPt[0]}" cy="${lastPt[1]}" r="3" fill="#E8A33D"/>
+    </svg>`;
+  } else {
+    sparkWrap.innerHTML = '';
+  }
+
+  // --- Recommandation du jour ---
+  const recoToday = recommandation.find(r => r['Date'] === today);
+  const recoCard = document.getElementById('recoCard');
+  if(recoToday){
+    recoCard.style.display = 'block';
+    document.getElementById('recoType').textContent = recoToday['Type Séance'] || '—';
+    document.getElementById('recoSub').textContent = (recoToday['Raisonnement'] || '').slice(0, 90) + ((recoToday['Raisonnement']||'').length > 90 ? '…' : '');
+    document.getElementById('recoBadge').textContent = recoToday['Déficit Calorique Cible'] ? `−${recoToday['Déficit Calorique Cible']} kcal` : '';
+  } else {
+    recoCard.style.display = 'none';
   }
 
   // --- Repas du jour ---
@@ -375,6 +596,14 @@ function render(data){
     document.getElementById('repasTotalRow').style.display = 'flex';
     document.getElementById('repasTotalVal').textContent = `${Math.round(totalCal)} kcal · ${totalProt.toFixed(0)}g protéines`;
   }
+
+  // --- Barre de progression protéines (objectif 150g/jour) ---
+  const protTarget = 150;
+  const protFill = document.getElementById('protFill');
+  const protPct = Math.max(0, Math.min(100, (totalProt / protTarget) * 100));
+  countUp(document.getElementById('protCurrentVal'), totalProt, 0);
+  protFill.style.width = protPct + '%';
+  protFill.classList.toggle('done', totalProt >= protTarget);
 
   // --- Séance du jour ---
   const seanceToday = seances.find(s => s['Date'] === today);
@@ -416,7 +645,7 @@ function render(data){
 
   if(depense !== null && mange !== null){
     const balance = depense - mange; // positif = déficit, négatif = surplus
-    balanceVal.textContent = Math.abs(Math.round(balance));
+    countUp(balanceVal, Math.abs(balance), 0);
     balanceSign.textContent = balance >= 0 ? '−' : '+';
     balanceVal.style.color = balance >= 0 ? 'var(--sage)' : 'var(--rust)';
     balanceSign.style.color = balance >= 0 ? 'var(--sage)' : 'var(--rust)';
@@ -431,6 +660,18 @@ function render(data){
     balanceSign.textContent = '';
     balanceLabel.textContent = depense === null ? 'Donnée Whoop du jour indisponible' : 'Aucun repas loggé pour calculer le bilan';
     gaugeFill.style.width = '0%';
+  }
+
+  // --- Bilan IA du jour ---
+  const bilanToday = bilans.find(b => b['Date'] === today);
+  const bilanCard = document.getElementById('bilanCard');
+  if(bilanToday && bilanToday['Bilan']){
+    bilanCard.style.display = 'block';
+    const fullText = bilanToday['Bilan'];
+    document.getElementById('bilanPreview').textContent = fullText.slice(0, 140).trim() + (fullText.length > 140 ? '…' : '');
+    document.getElementById('bilanBody').textContent = fullText;
+  } else {
+    bilanCard.style.display = 'none';
   }
 
   document.getElementById('loadingState').style.display = 'none';
