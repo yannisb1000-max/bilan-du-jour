@@ -291,6 +291,17 @@ body{
 .chart-stats{ display:flex; justify-content:space-between; margin-top:14px; font-size:12px; color:var(--text-faint); }
 .chart-stats b{ color:var(--text); font-family:'IBM Plex Mono',monospace; }
 
+/* ---------- Journée référence ---------- */
+.score-hero{ text-align:center; }
+.score-num{ font-family:'Fraunces',serif; font-size:56px; font-weight:500; line-height:1; }
+.score-num .score-max{ font-size:24px; color:var(--text-faint); font-weight:400; }
+.score-date{ font-size:13px; color:var(--text-dim); margin-top:8px; }
+.score-breakdown{ display:flex; flex-direction:column; gap:14px; }
+.score-item-head{ display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:6px; }
+.score-item-head .si-label{ color:var(--text-dim); }
+.score-item-head .si-raw{ color:var(--text); font-weight:600; font-family:'IBM Plex Mono',monospace; }
+.ref-empty{ text-align:center; padding:60px 20px; color:var(--text-faint); font-size:14px; line-height:1.6; }
+
 /* ---------- Tab bar ---------- */
 .tabbar{
   position:fixed; bottom:0; left:0; right:0; z-index:40;
@@ -300,13 +311,13 @@ body{
   display:flex; justify-content:space-around;
 }
 .tab-btn{
-  display:flex; flex-direction:column; align-items:center; gap:4px;
+  display:flex; flex-direction:column; align-items:center; gap:3px;
   background:none; border:none; color: var(--text-faint); cursor:pointer;
-  font-family:'Space Grotesk',sans-serif; font-size:10.5px; font-weight:600;
-  letter-spacing:.03em; padding:4px 14px; transition: color .2s;
+  font-family:'Space Grotesk',sans-serif; font-size:9.5px; font-weight:600;
+  letter-spacing:.02em; padding:4px 6px; transition: color .2s;
 }
 .tab-btn.active{ color: var(--gold); }
-.tab-btn svg{ width:20px; height:20px; }
+.tab-btn svg{ width:19px; height:19px; }
 
 /* ---------- Pages ---------- */
 .page{ display:none; }
@@ -530,6 +541,11 @@ body{
       </div>
     </div>
 
+    <!-- ============ PAGE : JOURNÉE RÉFÉRENCE ============ -->
+    <div class="page" id="page-reference">
+      <div id="referenceContent"></div>
+    </div>
+
   </div>
 </div>
 
@@ -545,6 +561,10 @@ body{
   <button class="tab-btn" data-page="progression" onclick="switchPage('progression')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19l6-7 4 4 6-9"/></svg>
     Progrès
+  </button>
+  <button class="tab-btn" data-page="reference" onclick="switchPage('reference')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l2.9 6.6 7.1.7-5.4 4.7 1.7 7-6.3-3.9-6.3 3.9 1.7-7-5.4-4.7 7.1-.7z"/></svg>
+    Référence
   </button>
   <button class="tab-btn" data-page="history" onclick="switchPage('history')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
@@ -682,6 +702,7 @@ async function load(isManual){
     renderHistory(data);
     renderHeaderExtras(data);
     renderProgressionSetup(data);
+    renderReference(data);
     const now = new Intl.DateTimeFormat('fr-FR',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Paris'}).format(new Date());
     document.getElementById('syncLabel').textContent = `Mis à jour à ${now}`;
     document.getElementById('loadingState').style.display='none';
@@ -947,6 +968,154 @@ function renderExoChart(){
     <span>Première : <b>${first}kg</b></span>
     <span>Dernière : <b>${last}kg</b></span>
     <span style="color:${gain>=0?'var(--emerald)':'var(--rust)'};">${gain>=0?'+':''}${gain.toFixed(1)}kg</span>`;
+}
+
+function computeDayScore(dateStr, whoop, health, repasLog, seances){
+  const w = whoop.find(x=>x['Date']===dateStr);
+  const wNext = whoop.find(x=>x['Date']===addDays(dateStr, 1)); // récupération de la nuit QUI SUIT (effet de la journée, pas cause)
+  const meals = repasLog.filter(r=>r['Date']===dateStr);
+  const s = seances.find(x=>x['Date']===dateStr);
+  const comps = [];
+  let totalProt = 0, totalCal = 0;
+
+  if(meals.length){
+    totalProt = meals.reduce((a,m)=>a+(num(m['Protéines'])||0),0);
+    totalCal = meals.reduce((a,m)=>a+(num(m['Calories'])||0),0);
+    comps.push({ label:'Protéines', value: Math.min(1, totalProt/150), raw:`${totalProt.toFixed(0)}g / 150g` });
+  }
+  if(w && w['Calories Jour']!=='' && meals.length){
+    const dep = num(w['Calories Jour']);
+    const deficit = dep - totalCal;
+    const dscore = (deficit>=200 && deficit<=800) ? 1 : Math.max(0, 1 - Math.abs(deficit-500)/900);
+    comps.push({ label:'Déficit calorique', value: dscore, raw:`${deficit>=0?'−':'+'}${Math.abs(Math.round(deficit))} kcal` });
+  }
+  if(wNext && wNext['Récupération %']!==''){
+    comps.push({ label:'Récupération (nuit suivante)', value: num(wNext['Récupération %'])/100, raw:`${Math.round(num(wNext['Récupération %']))}%` });
+  }
+  if(w && w['Sommeil Perf %']!==''){
+    comps.push({ label:'Sommeil', value: num(w['Sommeil Perf %'])/100, raw:`${Math.round(num(w['Sommeil Perf %']))}%` });
+  }
+  if(s){
+    // --- Ressenti subjectif ---
+    const plaisir=num(s['Plaisir']), energie=num(s['Énergie']), fatNerv=num(s['Fatigue Nerveuse']);
+    const ressentiParts=[];
+    if(plaisir!==null) ressentiParts.push(plaisir/10);
+    if(energie!==null) ressentiParts.push(energie/10);
+    if(fatNerv!==null) ressentiParts.push((10-fatNerv)/10);
+    const ressentiAvg = ressentiParts.length ? ressentiParts.reduce((a,b)=>a+b,0)/ressentiParts.length : null;
+
+    // --- Performance objective : PR + tonnage vs moyenne des séances du même type ---
+    const prPresent = s['PRs'] && String(s['PRs']).trim().length > 0;
+    const perfParts = [prPresent ? 1 : 0.5];
+    const tonnage = num(s['Tonnage Total']);
+    let tonnageNote = '';
+    if(tonnage){
+      const sameType = seances.filter(x=>x['Type']===s['Type'] && x['Date']!==dateStr && x['Tonnage Total']!=='' && x['Tonnage Total']!==undefined);
+      if(sameType.length){
+        const avgTonnage = sameType.reduce((a,x)=>a+num(x['Tonnage Total']),0) / sameType.length;
+        if(avgTonnage > 0){
+          const ratio = tonnage / avgTonnage;
+          perfParts.push(Math.max(0, Math.min(1, 0.5 + (ratio-1))));
+          tonnageNote = ` · ${Math.round(tonnage)}kg (${ratio>=1?'+':''}${Math.round((ratio-1)*100)}% vs moy.)`;
+        }
+      }
+    }
+    const perfAvg = perfParts.reduce((a,b)=>a+b,0) / perfParts.length;
+
+    if(ressentiAvg!==null || tonnage || prPresent){
+      const combined = ressentiAvg!==null ? (ressentiAvg + perfAvg)/2 : perfAvg;
+      comps.push({ label:'Séance — ressenti & performance', value: combined,
+        raw:`${plaisir!==null?'Plaisir '+plaisir+'/10':''}${tonnageNote}${prPresent?' · PR 🏅':''}` });
+    }
+  }
+  if(comps.length < 2) return null;
+  const score = comps.reduce((a,c)=>a+c.value,0)/comps.length * 100;
+  return { date:dateStr, score, comps, meals, totalCal, totalProt, seance:s, whoop:w, health: health.find(h=>h['Date']===dateStr) };
+}
+
+function findBestDay(data){
+  const whoop=data.whoop||[], health=data.health||[], repasLog=data.repas_log||[], seances=data.seances||[];
+  const dateSet = new Set([...whoop.map(x=>x['Date']), ...repasLog.map(x=>x['Date']), ...seances.map(x=>x['Date'])]);
+  let best = null;
+  dateSet.forEach(d=>{
+    const r = computeDayScore(d, whoop, health, repasLog, seances);
+    if(r && (!best || r.score > best.score)) best = r;
+  });
+  return best;
+}
+
+function renderReference(data){
+  const container = document.getElementById('referenceContent');
+  const best = findBestDay(data);
+  if(!best){
+    container.innerHTML = '<div class="ref-empty">Pas encore assez de données croisées (repas + Whoop + séance) sur une même journée pour désigner une référence. Continue à logger, ça se peuplera vite.</div>';
+    return;
+  }
+  const depense = best.whoop ? num(best.whoop['Calories Jour']) : null;
+  const balance = (depense!==null && best.meals.length) ? depense - best.totalCal : null;
+
+  const scoreHtml = `
+    <div class="card fade-in score-hero">
+      <p class="eyebrow" style="justify-content:center;"><span class="dot"></span>Journée référence</p>
+      <div class="score-num">${Math.round(best.score)}<span class="score-max">/100</span></div>
+      <div class="score-date">${fmtDateLabel(best.date)}</div>
+    </div>`;
+
+  const breakdownHtml = `
+    <div class="card fade-in">
+      <p class="eyebrow"><span class="dot"></span>Pourquoi ce jour ?</p>
+      <div class="score-breakdown">
+        ${best.comps.map(c=>`
+          <div>
+            <div class="score-item-head"><span class="si-label">${c.label}</span><span class="si-raw">${c.raw}</span></div>
+            <div class="progress-track"><div class="progress-fill done" style="width:${Math.round(c.value*100)}%"></div></div>
+          </div>`).join('')}
+      </div>
+    </div>`;
+
+  let balanceHtml = '';
+  if(depense!==null || best.meals.length){
+    balanceHtml = `
+      <div class="card fade-in">
+        <p class="eyebrow"><span class="dot"></span>Bilan calorique</p>
+        <div class="kv-row" style="font-size:14px;">
+          <span>Dépensé <span class="kv-val mono">${depense!==null?Math.round(depense):'—'}</span></span>
+          <span>Mangé <span class="kv-val mono">${best.meals.length?Math.round(best.totalCal):'—'}</span></span>
+          <span>Écart <span class="kv-val mono" style="color:${balance!==null&&balance>=0?'var(--emerald)':'var(--rust)'};">${balance!==null?(balance>=0?'−':'+')+Math.abs(Math.round(balance)):'—'}</span></span>
+        </div>
+      </div>`;
+  }
+
+  let seanceHtml = '';
+  if(best.seance){
+    const s = best.seance;
+    const exoText = s['Détail Exercices'] || 'Détail non disponible';
+    seanceHtml = `
+      <div class="card fade-in">
+        <p class="eyebrow"><span class="dot"></span>Séance</p>
+        <div class="seance-mini-card" id="seancecard-ref-${best.date}" onclick="toggleSeanceDetail('ref-${best.date}', event)">
+          <div class="seance-mini-head">
+            <div>
+              <div class="seance-mini-name">${s['Type']||'Séance'}</div>
+              <div class="seance-mini-stats">Strain ${s['Strain Séance']||'—'} · ${s['Calories']?Math.round(s['Calories']):'—'} kcal · ${s['Durée (min)']?Math.round(s['Durée (min)']):'—'} min${s['Tonnage Total']?' · '+Math.round(s['Tonnage Total'])+' kg':''}</div>
+            </div>
+            <svg class="chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+          </div>
+          <div class="exo-detail" id="exo-ref-${best.date}"><div class="exo-detail-inner">${exoText}</div></div>
+        </div>
+      </div>`;
+  }
+
+  let repasHtml = '';
+  if(best.meals.length){
+    repasHtml = `
+      <div class="card fade-in">
+        <p class="eyebrow"><span class="dot"></span>Repas</p>
+        ${best.meals.map(m=>`<div class="mini-meal"><div class="mm-type">${m['Type Repas']||''}</div><div class="mm-desc">${m['Description']||''}</div><div class="mm-macros">${Math.round(num(m['Calories'])||0)} kcal · ${num(m['Protéines'])??'—'}P ${num(m['Lipides'])??'—'}L ${num(m['Glucides'])??'—'}G</div></div>`).join('')}
+      </div>`;
+  }
+
+  container.innerHTML = scoreHtml + breakdownHtml + balanceHtml + seanceHtml + repasHtml;
 }
 
 function renderWeek(data){
