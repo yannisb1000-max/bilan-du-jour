@@ -3,6 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Performance">
+<meta name="theme-color" content="#0B0A08">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%230B0A08'/%3E%3Ccircle cx='50' cy='50' r='30' fill='none' stroke='%23D8A85A' stroke-width='6'/%3E%3Cpath d='M50 32v18l12 12' stroke='%23D8A85A' stroke-width='6' stroke-linecap='round' fill='none'/%3E%3C/svg%3E">
 <title>Performance Journal</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -30,6 +35,26 @@
   --radius-lg: 20px;
   --radius-md: 14px;
   --radius-sm: 9px;
+}
+:root[data-theme="light"]{
+  --bg: #F7F1E4;
+  --bg-glow: radial-gradient(ellipse 900px 500px at 50% -10%, rgba(184,132,46,0.10), transparent 60%);
+  --surface: #FFFFFF;
+  --surface-2: #F1E9D8;
+  --surface-3: #FBF7EF;
+  --hairline: rgba(28,24,16,0.08);
+  --hairline-strong: rgba(28,24,16,0.14);
+  --text: #211C13;
+  --text-dim: #6B6252;
+  --text-faint: #9A9078;
+  --gold: #B8842E;
+  --gold-soft: rgba(184,132,46,0.12);
+  --emerald: #4F7A5C;
+  --emerald-soft: rgba(79,122,92,0.12);
+  --rust: #A84E33;
+  --rust-soft: rgba(168,78,51,0.12);
+  --blue: #5C7999;
+  --blue-soft: rgba(92,121,153,0.12);
 }
 *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
 html,body{ margin:0; padding:0; }
@@ -59,6 +84,11 @@ body{
 }
 .brand .date-serif{ font-family:'Fraunces', serif; font-size:22px; font-weight:500; letter-spacing:-0.01em; }
 .sync-label{ font-size:11px; color: var(--text-faint); margin-top:3px; }
+.last-seance-line{ font-size:11px; color: var(--text-faint); margin-top:2px; }
+.streak-badge{
+  display:flex; align-items:center; gap:5px; background: var(--gold-soft); color: var(--gold);
+  font-size:11px; font-weight:600; padding:5px 10px; border-radius:20px; margin-top:6px; width:fit-content;
+}
 #refreshBtn{
   background: var(--surface-2); border:1px solid var(--hairline-strong); color: var(--text-dim);
   width:36px; height:36px; border-radius:50%; cursor:pointer;
@@ -210,8 +240,10 @@ body{
 .pr-chip .pr-text b{ color:var(--text); }
 
 /* ---------- Journal (Historique) ---------- */
-.journal-row{ display:flex; align-items:center; gap:14px; padding:14px 0; border-top:1px solid var(--hairline); }
+.journal-row{ display:flex; align-items:center; gap:14px; padding:14px 0; border-top:1px solid var(--hairline); cursor:pointer; }
 .journal-row:first-child{ border-top:none; }
+.journal-row .chevron{ color: var(--text-faint); transition: transform .25s; flex-shrink:0; }
+.journal-row.open .chevron{ transform: rotate(180deg); }
 .journal-date{ width:44px; flex-shrink:0; text-align:center; }
 .journal-date .jd-day{ font-family:'Fraunces',serif; font-size:20px; font-weight:500; line-height:1; }
 .journal-date .jd-month{ font-size:9px; text-transform:uppercase; color:var(--text-faint); letter-spacing:.06em; }
@@ -222,6 +254,42 @@ body{
 .journal-metric{ text-align:center; }
 .journal-metric .jm-val{ font-family:'IBM Plex Mono',monospace; font-size:12.5px; font-weight:600; }
 .journal-metric .jm-label{ font-size:8.5px; text-transform:uppercase; color:var(--text-faint); }
+
+.journal-detail{ max-height:0; overflow:hidden; transition: max-height .4s ease; }
+.journal-detail-inner{ padding: 4px 0 16px 58px; }
+.jd-section-label{ font-size:10px; text-transform:uppercase; letter-spacing:.1em; color:var(--text-faint); font-weight:600; margin:12px 0 8px; }
+.jd-section-label:first-child{ margin-top:0; }
+
+.seance-mini-card{
+  background: var(--surface-2); border-radius:var(--radius-sm); padding:12px 14px; cursor:pointer;
+}
+.seance-mini-head{ display:flex; align-items:center; justify-content:space-between; }
+.seance-mini-name{ font-size:13px; font-weight:600; }
+.seance-mini-stats{ font-size:11px; color:var(--text-faint); margin-top:2px; }
+.seance-mini-card .chevron{ color: var(--text-faint); transition: transform .25s; }
+.seance-mini-card.open .chevron{ transform: rotate(180deg); }
+.exo-detail{ max-height:0; overflow:hidden; transition: max-height .4s ease; }
+.exo-detail-inner{ padding-top:10px; margin-top:10px; border-top:1px solid var(--hairline); font-size:12px; color:var(--text-dim); line-height:1.6; white-space:pre-line; font-family:'IBM Plex Mono',monospace; }
+
+.mini-meal{ padding:8px 0; border-top:1px solid var(--hairline); font-size:12px; }
+.mini-meal:first-child{ border-top:none; padding-top:0; }
+.mini-meal .mm-type{ font-weight:600; color:var(--text); }
+.mini-meal .mm-desc{ color:var(--text-faint); margin-top:1px; }
+.mini-meal .mm-macros{ color:var(--text-dim); margin-top:3px; font-family:'IBM Plex Mono',monospace; font-size:11px; }
+
+/* ---------- Progression (exercices) ---------- */
+.exo-select{
+  width:100%; background: var(--surface-2); border:1px solid var(--hairline-strong); color: var(--text);
+  font-family:'Space Grotesk',sans-serif; font-size:14px; font-weight:500; padding:12px 14px;
+  border-radius: var(--radius-sm); appearance:none; -webkit-appearance:none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236E6656' stroke-width='2.2' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat:no-repeat; background-position: right 14px center; background-size:16px;
+}
+.chart-wrap{ margin-top:20px; }
+.chart-wrap svg{ width:100%; height:180px; display:block; overflow:visible; }
+.chart-empty{ text-align:center; color:var(--text-faint); font-size:13px; padding:40px 0; }
+.chart-stats{ display:flex; justify-content:space-between; margin-top:14px; font-size:12px; color:var(--text-faint); }
+.chart-stats b{ color:var(--text); font-family:'IBM Plex Mono',monospace; }
 
 /* ---------- Tab bar ---------- */
 .tabbar{
@@ -308,6 +376,8 @@ body{
         <div class="kicker">Performance Journal</div>
         <div class="date-serif" id="dateLabel"></div>
         <div class="sync-label" id="syncLabel"></div>
+        <div class="last-seance-line" id="lastSeanceLine"></div>
+        <div class="streak-badge" id="streakBadge" style="display:none;"></div>
       </div>
       <button id="refreshBtn" aria-label="Actualiser" onclick="load(true)">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
@@ -450,6 +520,16 @@ body{
       </div>
     </div>
 
+    <!-- ============ PAGE : PROGRESSION ============ -->
+    <div class="page" id="page-progression">
+      <div class="card fade-in">
+        <p class="eyebrow"><span class="dot"></span>Progression par exercice</p>
+        <select class="exo-select" id="exoSelect" onchange="renderExoChart()"></select>
+        <div class="chart-wrap" id="chartWrap"></div>
+        <div class="chart-stats" id="chartStats"></div>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -462,6 +542,10 @@ body{
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/></svg>
     Semaine
   </button>
+  <button class="tab-btn" data-page="progression" onclick="switchPage('progression')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19l6-7 4 4 6-9"/></svg>
+    Progrès
+  </button>
   <button class="tab-btn" data-page="history" onclick="switchPage('history')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
     Historique
@@ -469,6 +553,14 @@ body{
 </div>
 
 <script>
+// --- Thème clair/sombre automatique selon l'heure (Europe/Paris) ---
+(function applyAutoTheme(){
+  const hour = Number(new Intl.DateTimeFormat('fr-FR',{hour:'2-digit',hour12:false,timeZone:'Europe/Paris'}).format(new Date()));
+  document.documentElement.setAttribute('data-theme', (hour>=7 && hour<19) ? 'light' : 'dark');
+})();
+
+let LAST_DATA = null; // conservé en mémoire pour l'onglet Progression (pas de re-fetch au changement d'exercice)
+
 const WEBAPP_URL = "https://script.google.com/macros/s/AKfycbwPEJzv0wW9U7lnZs_q_8ZFhV8rXD1Af6PAEkADih_ycOUS5ombD0BR6Y31v5FLYBGQeQ/exec";
 const SECRET = "ro_view_9f3ab2";
 const PIN = "0000"; // ⚠️ CHANGE CE CODE avant de mettre en ligne — choisis 4 chiffres personnels
@@ -510,6 +602,12 @@ function fmtDateLabel(d){
 function fmtShort(d){
   const dt = new Date(d + 'T00:00:00');
   return { day: new Intl.DateTimeFormat('fr-FR',{day:'numeric'}).format(dt), month: new Intl.DateTimeFormat('fr-FR',{month:'short'}).format(dt).replace('.','') };
+}
+function addDays(dateStr, delta){
+  const dt = new Date(dateStr + 'T12:00:00');
+  dt.setDate(dt.getDate() + delta);
+  const fmt = new Intl.DateTimeFormat('fr-CA', { year:'numeric', month:'2-digit', day:'2-digit' });
+  return fmt.format(dt);
 }
 function num(v){ const n = Number(v); return isNaN(n) ? null : n; }
 
@@ -578,9 +676,12 @@ async function load(isManual){
     if(!res.ok) throw new Error(`Réponse HTTP ${res.status}`);
     const data = await res.json();
     if(data.error) throw new Error(data.error);
+    LAST_DATA = data;
     renderToday(data);
     renderWeek(data);
     renderHistory(data);
+    renderHeaderExtras(data);
+    renderProgressionSetup(data);
     const now = new Intl.DateTimeFormat('fr-FR',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Paris'}).format(new Date());
     document.getElementById('syncLabel').textContent = `Mis à jour à ${now}`;
     document.getElementById('loadingState').style.display='none';
@@ -724,6 +825,106 @@ function renderToday(data){
   } else bilanCard.style.display='none';
 }
 
+function renderHeaderExtras(data){
+  const seances = data.seances || [];
+  const repasLog = data.repas_log || [];
+  const today = todayStr();
+
+  // --- Dernière séance (hors aujourd'hui) ---
+  const pastSeances = seances.filter(s=>s['Date']!==today).sort((a,b)=>a['Date']<b['Date']?1:-1);
+  const line = document.getElementById('lastSeanceLine');
+  if(pastSeances.length){
+    const last = pastSeances[0];
+    const daysAgo = Math.round((new Date(today+'T00:00:00') - new Date(last['Date']+'T00:00:00')) / 86400000);
+    line.textContent = `Dernière séance : ${last['Type']} · il y a ${daysAgo}j`;
+  } else line.textContent = '';
+
+  // --- Streak (jours consécutifs avec repas loggés) ---
+  let streak = 0;
+  let checkDate = today;
+  if(!repasLog.some(r=>r['Date']===checkDate)) checkDate = addDays(today, -1);
+  while(repasLog.some(r=>r['Date']===checkDate)){
+    streak++;
+    checkDate = addDays(checkDate, -1);
+  }
+  const badge = document.getElementById('streakBadge');
+  if(streak>0){
+    badge.style.display = 'flex';
+    badge.innerHTML = `🔥 ${streak} jour${streak>1?'s':''} de suite`;
+  } else badge.style.display = 'none';
+}
+
+// --- Onglet Progression : parsing du détail d'exercices, sélection, graphique ---
+function parseExerciseEntries(seances){
+  // index : { nomExercice: [{date, kg}, ...] }
+  const index = {};
+  seances.forEach(s=>{
+    if(!s['Détail Exercices']) return;
+    String(s['Détail Exercices']).split('\n').forEach(line=>{
+      const m = line.match(/^-\s*([^:]+?)\s*:\s*(.+)$/);
+      if(!m) return;
+      const name = m[1].trim();
+      const rest = m[2];
+      const kgMatches = [...rest.matchAll(/(\d+(?:[.,]\d+)?)\s*kg/gi)].map(x=>parseFloat(x[1].replace(',','.')));
+      if(!kgMatches.length) return; // exercice au poids du corps, pas de charge à tracer
+      const maxKg = Math.max(...kgMatches);
+      if(!index[name]) index[name] = [];
+      index[name].push({ date: s['Date'], kg: maxKg });
+    });
+  });
+  return index;
+}
+
+function renderProgressionSetup(data){
+  const seances = data.seances || [];
+  const index = parseExerciseEntries(seances);
+  window.EXO_INDEX = index;
+  const select = document.getElementById('exoSelect');
+  const names = Object.keys(index).sort((a,b)=> index[b].length - index[a].length);
+  if(!names.length){
+    select.innerHTML = '<option>Aucun exercice avec charge détecté</option>';
+    document.getElementById('chartWrap').innerHTML = '<div class="chart-empty">Logge quelques séances avec des charges pour voir apparaître ta progression ici</div>';
+    return;
+  }
+  select.innerHTML = names.map(n=>`<option value="${n}">${n} (${index[n].length})</option>`).join('');
+  renderExoChart();
+}
+
+function renderExoChart(){
+  const select = document.getElementById('exoSelect');
+  const name = select.value;
+  const chartWrap = document.getElementById('chartWrap');
+  const chartStats = document.getElementById('chartStats');
+  const entries = (window.EXO_INDEX && window.EXO_INDEX[name]) ? window.EXO_INDEX[name].slice().sort((a,b)=>a.date<b.date?-1:1) : [];
+  if(entries.length < 2){
+    chartWrap.innerHTML = '<div class="chart-empty">Pas assez de séances loggées pour cet exercice</div>';
+    chartStats.innerHTML = '';
+    return;
+  }
+  const w=320,h=160,pad=10;
+  const kgs = entries.map(e=>e.kg);
+  const min = Math.min(...kgs), max = Math.max(...kgs), range=(max-min)||1;
+  const pts = entries.map((e,i)=>{
+    const x = pad + (i/(entries.length-1))*(w-pad*2);
+    const y = h-pad - ((e.kg-min)/range)*(h-pad*2);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+  const dots = entries.map((e,i)=>{
+    const [x,y] = pts.split(' ')[i].split(',');
+    return `<circle cx="${x}" cy="${y}" r="3.5" fill="var(--gold)"/>`;
+  }).join('');
+  chartWrap.innerHTML = `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
+    <polyline points="${pts}" fill="none" stroke="var(--gold)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    ${dots}
+  </svg>`;
+  const first = entries[0].kg, last = entries[entries.length-1].kg;
+  const gain = last - first;
+  chartStats.innerHTML = `
+    <span>Première : <b>${first}kg</b></span>
+    <span>Dernière : <b>${last}kg</b></span>
+    <span style="color:${gain>=0?'var(--emerald)':'var(--rust)'};">${gain>=0?'+':''}${gain.toFixed(1)}kg</span>`;
+}
+
 function renderWeek(data){
   const dates7 = Array.from({length:7}, (_,i) => todayStr(-6+i));
   const whoop = data.whoop||[], repasLog = data.repas_log||[], seances = data.seances||[], health = data.health||[];
@@ -775,6 +976,25 @@ function renderWeek(data){
     : '<div class="empty">Aucun record cette semaine</div>';
 }
 
+function toggleDay(dateKey){
+  const row = document.getElementById('row-'+dateKey);
+  const detail = document.getElementById('detail-'+dateKey);
+  const isOpen = row.classList.contains('open');
+  if(isOpen){ row.classList.remove('open'); detail.style.maxHeight = null; }
+  else{ row.classList.add('open'); detail.style.maxHeight = detail.scrollHeight + 'px'; }
+}
+function toggleSeanceDetail(dateKey, event){
+  event.stopPropagation();
+  const card = document.getElementById('seancecard-'+dateKey);
+  const exo = document.getElementById('exo-'+dateKey);
+  const isOpen = card.classList.contains('open');
+  if(isOpen){ card.classList.remove('open'); exo.style.maxHeight = null; }
+  else{ card.classList.add('open'); exo.style.maxHeight = exo.scrollHeight + 'px'; }
+  // recalcule la hauteur du parent (journal-detail) pour que rien ne soit coupé
+  const parentDetail = card.closest('.journal-detail');
+  if(parentDetail && parentDetail.style.maxHeight) requestAnimationFrame(()=>{ parentDetail.style.maxHeight = parentDetail.scrollHeight + 'px'; });
+}
+
 function renderHistory(data){
   const whoop = data.whoop||[], health = data.health||[], seances = data.seances||[], repasLog = data.repas_log||[];
   const dates14 = Array.from({length:14}, (_,i) => todayStr(-13+i)).reverse();
@@ -786,18 +1006,52 @@ function renderHistory(data){
     const health_d = health.find(h=>h['Date']===d && h['Poids']!=='');
     const whoop_d = whoop.find(w=>w['Date']===d);
     if(!seance && !meals.length && !health_d) return '';
+
     const {day,month} = fmtShort(d);
     const totalCal = meals.reduce((s,m)=>s+(num(m['Calories'])||0),0);
+    const totalProt = meals.reduce((s,m)=>s+(num(m['Protéines'])||0),0);
     let title = seance ? seance['Type'] : (meals.length ? `${meals.length} repas loggés` : 'Journée');
     let sub = [];
     if(whoop_d && whoop_d['Récupération %']!=='') sub.push(`Récup. ${Math.round(whoop_d['Récupération %'])}%`);
     if(health_d) sub.push(`${num(health_d['Poids']).toFixed(1)} kg`);
-    return `<div class="journal-row">
+
+    // --- Détail repas ---
+    const mealsHtml = meals.length
+      ? meals.map(m=>`<div class="mini-meal"><div class="mm-type">${m['Type Repas']||''}</div><div class="mm-desc">${m['Description']||''}</div><div class="mm-macros">${Math.round(num(m['Calories'])||0)} kcal · ${num(m['Protéines'])??'—'}P ${num(m['Lipides'])??'—'}L ${num(m['Glucides'])??'—'}G</div></div>`).join('')
+      : '<div class="empty">Aucun repas loggé</div>';
+
+    // --- Détail séance (2e niveau, avec exercices) ---
+    let seanceHtml = '<div class="empty">Pas de séance</div>';
+    if(seance){
+      const exoText = seance['Détail Exercices'] || 'Détail non disponible';
+      seanceHtml = `
+        <div class="seance-mini-card" id="seancecard-${d}" onclick="toggleSeanceDetail('${d}', event)">
+          <div class="seance-mini-head">
+            <div>
+              <div class="seance-mini-name">${seance['Type']||'Séance'}</div>
+              <div class="seance-mini-stats">Strain ${seance['Strain Séance']||'—'} · ${seance['Calories']?Math.round(seance['Calories']):'—'} kcal · ${seance['Durée (min)']?Math.round(seance['Durée (min)']):'—'} min${seance['Tonnage Total']?' · '+Math.round(seance['Tonnage Total'])+' kg':''}</div>
+            </div>
+            <svg class="chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+          </div>
+          <div class="exo-detail" id="exo-${d}"><div class="exo-detail-inner">${exoText}</div></div>
+        </div>`;
+    }
+
+    return `<div class="journal-row" id="row-${d}" onclick="toggleDay('${d}')">
       <div class="journal-date"><div class="jd-day serif">${day}</div><div class="jd-month">${month}</div></div>
       <div class="journal-body"><div class="journal-title">${title}</div><div class="journal-sub">${sub.join(' · ')}</div></div>
       <div class="journal-metrics">
         ${seance ? `<div class="journal-metric"><div class="jm-val">${seance['Strain Séance']||'—'}</div><div class="jm-label">Strain</div></div>` : ''}
         ${meals.length ? `<div class="journal-metric"><div class="jm-val">${Math.round(totalCal)}</div><div class="jm-label">Kcal</div></div>` : ''}
+      </div>
+      <svg class="chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+    </div>
+    <div class="journal-detail" id="detail-${d}">
+      <div class="journal-detail-inner">
+        <div class="jd-section-label">Séance</div>
+        ${seanceHtml}
+        <div class="jd-section-label">Repas${meals.length?` · ${Math.round(totalCal)} kcal · ${totalProt.toFixed(0)}g prot.`:''}</div>
+        ${mealsHtml}
       </div>
     </div>`;
   }).filter(Boolean).join('') || '<div class="empty">Aucune donnée sur cette période</div>';
