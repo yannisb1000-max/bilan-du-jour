@@ -99,7 +99,29 @@ body{
 }
 #refreshBtn:hover{ border-color: var(--gold); color: var(--gold); }
 #refreshBtn.spin svg{ animation: spin .7s linear; }
+#skinBtn{
+  background: var(--surface-2); border:1px solid var(--hairline-strong); color: var(--text-dim);
+  width:36px; height:36px; border-radius:50%; cursor:pointer;
+  display:flex; align-items:center; justify-content:center; transition: border-color .2s, color .2s;
+}
+#skinBtn:hover{ border-color: var(--gold); color: var(--gold); }
+#skinBtn.sober-active{ color: var(--gold); border-color: var(--gold); }
 @keyframes spin{ to{ transform: rotate(360deg); } }
+
+/* ---------- Mode SOBRE (override du skin, purement visuel) ---------- */
+[data-skin="sober"]{
+  --gold: #C9A227;
+  --bg-glow: radial-gradient(ellipse 1000px 600px at 50% -12%, rgba(201,162,39,0.07), transparent 60%);
+}
+[data-skin="sober"] .quick-btn{ background: var(--surface-2); border-color: var(--hairline-strong); color: var(--text); }
+[data-skin="sober"] .quick-btn .dot{ background: var(--gold); opacity:1; }
+[data-skin="sober"] .hero-card::after,
+[data-skin="sober"] .score-hero::after{ display:none; }
+[data-skin="sober"] .eyebrow .dot{ width:5px; height:5px; border-radius:50%; }
+[data-skin="sober"] .gauge-fill{ box-shadow:none; }
+[data-skin="sober"] .tab-btn.active{ background:none; }
+[data-skin="sober"] .hero-num,
+[data-skin="sober"] .score-num{ font-weight:500; letter-spacing:-0.02em; }
 
 /* ---------- Cards ---------- */
 .card{
@@ -298,6 +320,26 @@ body{
 .chart-stats{ display:flex; justify-content:space-between; margin-top:14px; font-size:12px; color:var(--text-faint); }
 .chart-stats b{ color:var(--text); font-family:'IBM Plex Mono',monospace; }
 
+/* ---------- Vital delta & trend ---------- */
+.vital-delta{ font-size:9.5px; color:var(--text-faint); margin-top:3px; font-family:'IBM Plex Mono',monospace; }
+.trend-line{ font-size:12px; color:var(--text-dim); margin-top:10px; }
+.trend-line b{ color:var(--text); font-family:'IBM Plex Mono',monospace; font-weight:700; }
+
+/* ---------- Risk banner ---------- */
+.risk-banner{
+  background: var(--rust-soft); border:1px solid var(--rust); border-radius: var(--radius-md);
+  padding:14px 16px; margin-bottom:14px; display:flex; gap:12px; align-items:flex-start;
+}
+.risk-banner svg{ color:var(--rust); flex-shrink:0; margin-top:2px; }
+.risk-banner-title{ font-size:13px; font-weight:700; color:var(--rust); margin-bottom:3px; }
+.risk-banner-text{ font-size:12px; color:var(--text-dim); line-height:1.5; }
+
+/* ---------- Heatmap ---------- */
+.heatmap-grid{ display:grid; grid-template-columns: repeat(10, 1fr); gap:5px; }
+.hm-cell{ width:100%; aspect-ratio:1; border-radius:4px; background: var(--surface-2); border:1px solid transparent; display:inline-block; }
+.heatmap-legend{ display:flex; gap:14px; margin-top:14px; font-size:10.5px; color:var(--text-faint); flex-wrap:wrap; }
+.heatmap-legend .hm-cell{ width:10px; height:10px; margin-right:5px; vertical-align:middle; }
+
 /* ---------- Journée référence ---------- */
 .score-hero{ text-align:center; border-color: var(--hairline-strong); }
 .score-hero::after{
@@ -401,13 +443,20 @@ body{
         <div class="last-seance-line" id="lastSeanceLine"></div>
         <div class="streak-badge" id="streakBadge" style="display:none;"></div>
       </div>
-      <button id="refreshBtn" aria-label="Actualiser" onclick="load(true)">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
-      </button>
+      <div style="display:flex; gap:8px;">
+        <button id="skinBtn" aria-label="Changer d'ambiance" onclick="toggleSkin()" title="Sobre / Flashy">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 2l1.8 5.6L19 9l-5.2 1.4L12 16l-1.8-5.6L5 9l5.2-1.4z"/></svg>
+        </button>
+        <button id="refreshBtn" aria-label="Actualiser" onclick="load(true)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+        </button>
+      </div>
     </div>
 
     <!-- ============ PAGE : AUJOURD'HUI ============ -->
     <div class="page active" id="page-today">
+
+      <div id="riskBanner"></div>
 
       <div class="card hero-card fade-in">
         <p class="eyebrow"><span class="dot"></span>Bilan calorique</p>
@@ -433,6 +482,7 @@ body{
               <circle id="ringRecup" cx="32" cy="32" r="27" fill="none" stroke="var(--emerald)" stroke-width="6" stroke-linecap="round" stroke-dasharray="169.6" stroke-dashoffset="169.6"/>
             </svg><div class="ring-val mono" id="recupVal">—</div></div>
             <div class="vital-label">Récup.</div>
+            <div class="vital-delta" id="recupDelta"></div>
           </div>
           <div class="vital">
             <div class="ring-wrap"><svg viewBox="0 0 64 64" width="64" height="64">
@@ -440,6 +490,7 @@ body{
               <circle id="ringStrain" cx="32" cy="32" r="27" fill="none" stroke="var(--gold)" stroke-width="6" stroke-linecap="round" stroke-dasharray="169.6" stroke-dashoffset="169.6"/>
             </svg><div class="ring-val mono" id="strainVal">—</div></div>
             <div class="vital-label">Strain</div>
+            <div class="vital-delta" id="strainDelta"></div>
           </div>
           <div class="vital">
             <div class="ring-wrap"><svg viewBox="0 0 64 64" width="64" height="64">
@@ -447,6 +498,7 @@ body{
               <circle id="ringSommeil" cx="32" cy="32" r="27" fill="none" stroke="var(--blue)" stroke-width="6" stroke-linecap="round" stroke-dasharray="169.6" stroke-dashoffset="169.6"/>
             </svg><div class="ring-val mono" id="sommeilVal">—</div></div>
             <div class="vital-label">Sommeil</div>
+            <div class="vital-delta" id="sommeilDelta"></div>
           </div>
         </div>
       </div>
@@ -456,6 +508,7 @@ body{
         <div class="poids-row"><span class="val serif" id="poidsVal">—</span><span class="unit">kg</span></div>
         <div class="poids-note" id="poidsNote"></div>
         <div class="sparkline-wrap" id="sparklineWrap"></div>
+        <div class="trend-line" id="trendLine"></div>
       </div>
 
       <div class="card fade-in" id="recoCard" style="display:none;">
@@ -473,6 +526,7 @@ body{
           <a class="quick-btn" href="shortcuts://run-shortcut?name=Log%20s%C3%A9ance"><span class="dot"></span>Log séance</a>
           <a class="quick-btn emerald" href="shortcuts://run-shortcut?name=Bilan%20IA"><span class="dot"></span>Bilan IA</a>
           <a class="quick-btn emerald" href="shortcuts://run-shortcut?name=Balance"><span class="dot"></span>Balance</a>
+          <button class="quick-btn emerald" style="border:1px solid var(--hairline-strong); cursor:pointer;" onclick="shareDayCard()"><span class="dot"></span>Partager ma journée</button>
         </div>
       </div>
 
@@ -536,6 +590,15 @@ body{
 
     <!-- ============ PAGE : HISTORIQUE ============ -->
     <div class="page" id="page-history">
+      <div class="card fade-in">
+        <p class="eyebrow"><span class="dot"></span>Constance (30 jours)</p>
+        <div class="heatmap-grid" id="heatmapGrid"></div>
+        <div class="heatmap-legend">
+          <span><span class="hm-cell" style="background:var(--surface-2);"></span>Rien</span>
+          <span><span class="hm-cell" style="background:var(--gold-soft); border-color:var(--gold);"></span>Repas</span>
+          <span><span class="hm-cell" style="background:var(--emerald);"></span>Repas + séance</span>
+        </div>
+      </div>
       <div class="card fade-in">
         <p class="eyebrow"><span class="dot"></span>14 derniers jours</p>
         <div id="journalList"></div>
@@ -611,6 +674,13 @@ function checkPin(){
 }
 document.getElementById('pinInput').addEventListener('keydown', e => { if(e.key==='Enter') checkPin(); });
 document.getElementById('pinInput').focus();
+
+function toggleSkin(){
+  const html = document.documentElement;
+  const isSober = html.getAttribute('data-skin') === 'sober';
+  html.setAttribute('data-skin', isSober ? 'flashy' : 'sober');
+  document.getElementById('skinBtn').classList.toggle('sober-active', !isSober);
+}
 
 function switchPage(name){
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -711,6 +781,7 @@ async function load(isManual){
     renderToday(data);
     renderWeek(data);
     renderHistory(data);
+    renderHeatmap(data);
     renderHeaderExtras(data);
     renderProgressionSetup(data);
     renderReference(data);
@@ -744,6 +815,22 @@ function renderToday(data){
   setRing('ringStrain', strain!==null ? (strain/21)*100 : 0);
   setRing('ringSommeil', sommeil!==null ? sommeil : 0);
 
+  // --- Deltas vs moyenne 30 jours (hors aujourd'hui) ---
+  function avgExcludingToday(key){
+    const vals = whoop.filter(w=>w['Date']!==today && w[key]!=='' && w[key]!==undefined).map(w=>num(w[key]));
+    return vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length : null;
+  }
+  function renderDelta(elId, current, avg, decimals){
+    const el = document.getElementById(elId);
+    if(current===null || avg===null){ el.textContent=''; return; }
+    const d = current - avg;
+    el.textContent = `${d>=0?'+':''}${d.toFixed(decimals)} vs moy.`;
+    el.style.color = d>=0 ? 'var(--emerald)' : 'var(--text-faint)';
+  }
+  renderDelta('recupDelta', recup, avgExcludingToday('Récupération %'), 0);
+  renderDelta('strainDelta', strain, avgExcludingToday('Strain Jour'), 1);
+  renderDelta('sommeilDelta', sommeil, avgExcludingToday('Sommeil Perf %'), 0);
+
   let poidsEntry = health.slice().reverse().find(r => r['Poids']!=='' && r['Poids']!==undefined);
   const poidsVal = document.getElementById('poidsVal'), poidsNote = document.getElementById('poidsNote');
   if(poidsEntry){
@@ -759,6 +846,20 @@ function renderToday(data){
     const last = pts.split(' ').pop().split(',');
     sparkWrap.innerHTML = `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><polyline points="${pts}" fill="none" stroke="#D8A85A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="${last[0]}" cy="${last[1]}" r="3" fill="#D8A85A"/></svg>`;
   } else sparkWrap.innerHTML = '';
+
+  // --- Tendance de poids (régression linéaire simple sur les points disponibles) ---
+  const trendLine = document.getElementById('trendLine');
+  if(poidsSeries.length>=4){
+    const n = poidsSeries.length;
+    const xs = poidsSeries.map((_,i)=>i);
+    const meanX = xs.reduce((a,b)=>a+b,0)/n, meanY = poidsSeries.reduce((a,b)=>a+b,0)/n;
+    let num_=0, den=0;
+    xs.forEach((x,i)=>{ num_ += (x-meanX)*(poidsSeries[i]-meanY); den += (x-meanX)**2; });
+    const slopePerPoint = den ? num_/den : 0;
+    const slopePerWeek = slopePerPoint * 7;
+    const projected30 = poidsSeries[n-1] + slopePerPoint*30;
+    trendLine.innerHTML = `Tendance : <b>${slopePerWeek>=0?'+':''}${slopePerWeek.toFixed(2)}kg/sem.</b> · projection 30j : <b>${projected30.toFixed(1)}kg</b>`;
+  } else trendLine.textContent = '';
 
   const recoToday = recommandation.find(r=>r['Date']===today);
   const recoCard = document.getElementById('recoCard');
@@ -855,6 +956,22 @@ function renderToday(data){
     document.getElementById('bilanPreview').textContent = fullText.slice(0,140).trim() + (fullText.length>140?'…':'');
     document.getElementById('bilanBody').textContent = fullText;
   } else bilanCard.style.display='none';
+
+  // --- Bannière "jour à risque" (règles simples, transparentes) ---
+  const yesterday = seances.find(s=>s['Date']===addDays(today,-1));
+  const fatigueNervHier = yesterday ? num(yesterday['Fatigue Nerveuse']) : null;
+  const deficitToday = (depense!==null && mange!==null) ? depense - mange : null;
+  const risks = [];
+  if(recup!==null && recup < 40) risks.push('récupération basse (<40%)');
+  if(fatigueNervHier!==null && fatigueNervHier >= 8) risks.push('fatigue nerveuse élevée hier');
+  if(deficitToday!==null && deficitToday > 1000) risks.push('déficit calorique très agressif aujourd\'hui');
+  const riskBanner = document.getElementById('riskBanner');
+  if(risks.length){
+    riskBanner.innerHTML = `<div class="risk-banner">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 9v4M12 17h.01M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg>
+      <div><div class="risk-banner-title">Jour à surveiller</div><div class="risk-banner-text">${risks.join(' · ')}. Pas de panique, mais un jour plus léger ou plus de sommeil ce soir seraient judicieux.</div></div>
+    </div>`;
+  } else riskBanner.innerHTML = '';
 }
 
 function renderHeaderExtras(data){
@@ -1129,6 +1246,86 @@ function renderReference(data){
   container.innerHTML = scoreHtml + breakdownHtml + balanceHtml + seanceHtml + repasHtml;
 }
 
+async function shareDayCard(){
+  const data = LAST_DATA;
+  if(!data){ return; }
+  await document.fonts.ready;
+
+  const today = todayStr();
+  const whoop = data.whoop||[], health = data.health||[], seances = data.seances||[], repasLog = data.repas_log||[];
+  const whoopToday = whoop.find(w=>w['Date']===today);
+  const poidsEntry = health.slice().reverse().find(r=>r['Poids']!=='' && r['Poids']!==undefined);
+  const seanceToday = seances.find(s=>s['Date']===today);
+  const mealsToday = repasLog.filter(r=>r['Date']===today);
+  const totalCal = mealsToday.reduce((s,m)=>s+(num(m['Calories'])||0),0);
+  const depense = whoopToday ? num(whoopToday['Calories Jour']) : null;
+  const balance = (depense!==null && mealsToday.length) ? depense - totalCal : null;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = 1080; canvas.height = 1350;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#050505'; ctx.fillRect(0,0,canvas.width,canvas.height);
+  const grad = ctx.createRadialGradient(540,-100,100,540,300,700);
+  grad.addColorStop(0,'rgba(255,122,26,0.22)'); grad.addColorStop(1,'rgba(255,122,26,0)');
+  ctx.fillStyle = grad; ctx.fillRect(0,0,canvas.width,700);
+
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#FF7A1A';
+  ctx.font = '700 26px "Space Grotesk", sans-serif';
+  ctx.fillText('PERFORMANCE JOURNAL', canvas.width/2, 120);
+
+  ctx.fillStyle = '#FFFFFF';
+  ctx.font = '500 40px "Fraunces", serif';
+  ctx.fillText(fmtDateLabel(today), canvas.width/2, 180);
+
+  ctx.font = '700 140px "Fraunces", serif';
+  ctx.fillStyle = balance!==null ? (balance>=0 ? '#35D07F' : '#FF4B45') : '#666666';
+  ctx.fillText(balance!==null ? `${balance>=0?'−':'+'}${Math.abs(Math.round(balance))}` : '—', canvas.width/2, 420);
+  ctx.font = '600 28px "Space Grotesk", sans-serif'; ctx.fillStyle = '#9B9B9B';
+  ctx.fillText('KCAL · BILAN DU JOUR', canvas.width/2, 470);
+
+  const statY = 620;
+  function drawStat(x, label, value){
+    ctx.font = '600 44px "IBM Plex Mono", monospace'; ctx.fillStyle = '#FFFFFF';
+    ctx.fillText(value, x, statY);
+    ctx.font = '700 18px "Space Grotesk", sans-serif'; ctx.fillStyle = '#9B9B9B';
+    ctx.fillText(label, x, statY+34);
+  }
+  drawStat(canvas.width*0.2, 'POIDS (KG)', poidsEntry ? num(poidsEntry['Poids']).toFixed(1) : '—');
+  drawStat(canvas.width*0.5, 'RÉCUP. %', whoopToday && whoopToday['Récupération %']!=='' ? String(Math.round(whoopToday['Récupération %'])) : '—');
+  drawStat(canvas.width*0.8, 'STRAIN', whoopToday && whoopToday['Strain Jour']!=='' ? String(whoopToday['Strain Jour']) : '—');
+
+  ctx.textAlign = 'left';
+  if(seanceToday){
+    ctx.font = '700 30px "Fraunces", serif'; ctx.fillStyle = '#FFFFFF';
+    ctx.fillText(seanceToday['Type']||'Séance', 100, 800);
+    ctx.font = '500 22px "Space Grotesk", sans-serif'; ctx.fillStyle = '#9B9B9B';
+    ctx.fillText(`Strain ${seanceToday['Strain Séance']||'—'} · ${seanceToday['Calories']?Math.round(seanceToday['Calories']):'—'} kcal · ${seanceToday['Durée (min)']?Math.round(seanceToday['Durée (min)']):'—'} min`, 100, 836);
+  }
+  if(mealsToday.length){
+    ctx.font = '700 30px "Fraunces", serif'; ctx.fillStyle = '#FFFFFF';
+    ctx.fillText(`${mealsToday.length} repas loggés`, 100, 920);
+    ctx.font = '500 22px "Space Grotesk", sans-serif'; ctx.fillStyle = '#9B9B9B';
+    ctx.fillText(`${Math.round(totalCal)} kcal au total`, 100, 956);
+  }
+
+  ctx.textAlign = 'center';
+  ctx.font = '600 20px "Space Grotesk", sans-serif'; ctx.fillStyle = '#545454';
+  ctx.fillText('performance-journal', canvas.width/2, canvas.height-60);
+
+  canvas.toBlob(blob=>{
+    const file = new File([blob], `journee-${today}.png`, { type:'image/png' });
+    if(navigator.canShare && navigator.canShare({ files:[file] })){
+      navigator.share({ files:[file], title:'Ma journée', text:`Bilan du ${fmtDateLabel(today)}` }).catch(()=>{});
+    } else {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = `journee-${today}.png`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+  }, 'image/png');
+}
+
 function renderWeek(data){
   const dates7 = Array.from({length:7}, (_,i) => todayStr(-6+i));
   const whoop = data.whoop||[], repasLog = data.repas_log||[], seances = data.seances||[], health = data.health||[];
@@ -1197,6 +1394,22 @@ function toggleSeanceDetail(dateKey, event){
   // recalcule la hauteur du parent (journal-detail) pour que rien ne soit coupé
   const parentDetail = card.closest('.journal-detail');
   if(parentDetail && parentDetail.style.maxHeight) requestAnimationFrame(()=>{ parentDetail.style.maxHeight = parentDetail.scrollHeight + 'px'; });
+}
+
+function renderHeatmap(data){
+  const repasLog = data.repas_log||[], seances = data.seances||[];
+  const dates30 = Array.from({length:30}, (_,i) => todayStr(-29+i));
+  const grid = document.getElementById('heatmapGrid');
+  grid.innerHTML = dates30.map(d=>{
+    const hasRepas = repasLog.some(r=>r['Date']===d);
+    const hasSeance = seances.some(s=>s['Date']===d);
+    let style;
+    if(hasRepas && hasSeance) style = 'background:var(--emerald); border-color:var(--emerald);';
+    else if(hasRepas) style = 'background:var(--gold-soft); border-color:var(--gold);';
+    else style = 'background:var(--surface-2); border-color:transparent;';
+    const {day,month} = fmtShort(d);
+    return `<div class="hm-cell" style="${style}" title="${day} ${month}"></div>`;
+  }).join('');
 }
 
 function renderHistory(data){
