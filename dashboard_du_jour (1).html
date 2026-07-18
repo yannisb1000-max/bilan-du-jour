@@ -1352,79 +1352,110 @@ async function shareMorningCard(){
   const whoop = data.whoop||[], health = data.health||[];
   const w = whoop.find(x=>x['Date']===today);
 
+  const W = 1080, H = 2180;
   const canvas = document.createElement('canvas');
-  canvas.width = 1080; canvas.height = 1500;
+  canvas.width = W; canvas.height = H;
   const ctx = canvas.getContext('2d');
-  ctx.fillStyle = '#050505'; ctx.fillRect(0,0,canvas.width,canvas.height);
+  ctx.fillStyle = '#050505'; ctx.fillRect(0,0,W,H);
   const grad = ctx.createRadialGradient(540,-100,100,540,300,700);
   grad.addColorStop(0,'rgba(53,208,127,0.22)'); grad.addColorStop(1,'rgba(53,208,127,0)');
-  ctx.fillStyle = grad; ctx.fillRect(0,0,canvas.width,700);
+  ctx.fillStyle = grad; ctx.fillRect(0,0,W,700);
 
+  let y = 110;
   ctx.textAlign = 'center';
   ctx.fillStyle = '#35D07F';
   ctx.font = '700 26px "Space Grotesk", sans-serif';
-  ctx.fillText('MORNING BRIEF', canvas.width/2, 110);
+  ctx.fillText('MORNING BRIEF', W/2, y);
 
+  y += 58;
   ctx.fillStyle = '#FFFFFF';
   ctx.font = '500 38px "Fraunces", serif';
-  ctx.fillText(fmtDateLabel(today), canvas.width/2, 168);
+  ctx.fillText(fmtDateLabel(today), W/2, y);
 
+  y += 210;
   ctx.font = '700 150px "Fraunces", serif';
   ctx.fillStyle = '#35D07F';
-  ctx.fillText(w && w['Récupération %']!=='' ? Math.round(w['Récupération %'])+'%' : '—', canvas.width/2, 380);
+  ctx.fillText(w && w['Récupération %']!=='' ? Math.round(w['Récupération %'])+'%' : '—', W/2, y);
+  y += 44;
   ctx.font = '600 26px "Space Grotesk", sans-serif'; ctx.fillStyle = '#9B9B9B';
-  ctx.fillText('RÉCUPÉRATION', canvas.width/2, 430);
+  ctx.fillText('RÉCUPÉRATION', W/2, y);
 
-  const statY = 520;
-  function drawStat(x, label, value){
-    ctx.font = '600 38px "IBM Plex Mono", monospace'; ctx.fillStyle = '#FFFFFF';
-    ctx.fillText(value, x, statY);
-    ctx.font = '700 16px "Space Grotesk", sans-serif'; ctx.fillStyle = '#9B9B9B';
-    ctx.fillText(label, x, statY+30);
+  // --- 6 stats de récupération, 2 rangées de 3 ---
+  y += 100;
+  function drawStat(x, yy, label, value){
+    ctx.font = '600 36px "IBM Plex Mono", monospace'; ctx.fillStyle = '#FFFFFF';
+    ctx.fillText(value, x, yy);
+    ctx.font = '700 15px "Space Grotesk", sans-serif'; ctx.fillStyle = '#9B9B9B';
+    ctx.fillText(label, x, yy+28);
   }
-  drawStat(canvas.width*0.16, 'VFC', w && w['VFC (HRV)']!=='' ? String(Math.round(w['VFC (HRV)'])) : '—');
-  drawStat(canvas.width*0.38, 'FC REPOS', w && w['FCR (RHR)']!=='' ? String(Math.round(w['FCR (RHR)'])) : '—');
-  drawStat(canvas.width*0.62, 'SPO2', w && w['SpO2']!=='' ? Math.round(w['SpO2'])+'%' : '—');
-  drawStat(canvas.width*0.84, 'RESP.', w && w['Freq Respiratoire']!=='' ? num(w['Freq Respiratoire']).toFixed(1) : '—');
+  const col = [W*0.18, W*0.5, W*0.82];
+  drawStat(col[0], y, 'VFC (MS)', w && w['VFC (HRV)']!=='' ? String(Math.round(w['VFC (HRV)'])) : '—');
+  drawStat(col[1], y, 'FC REPOS', w && w['FCR (RHR)']!=='' ? String(Math.round(w['FCR (RHR)'])) : '—');
+  drawStat(col[2], y, 'SPO2', w && w['SpO2']!=='' ? Math.round(w['SpO2'])+'%' : '—');
+  y += 76;
+  drawStat(col[0], y, 'TEMP. CUTANÉE', w && w['Temp Cutanée']!=='' ? num(w['Temp Cutanée']).toFixed(1)+'°' : '—');
+  drawStat(col[1], y, 'FREQ. RESP.', w && w['Freq Respiratoire']!=='' ? num(w['Freq Respiratoire']).toFixed(1) : '—');
 
-  // Sommeil
+  // --- Sommeil ---
+  y += 100;
   ctx.textAlign='left';
-  ctx.font = '700 30px "Fraunces", serif'; ctx.fillStyle = '#FFFFFF';
-  ctx.fillText('Sommeil', 100, 660);
-  ctx.font = '500 22px "Space Grotesk", sans-serif'; ctx.fillStyle = '#9B9B9B';
-  ctx.fillText(`Performance ${w && w['Sommeil Perf %']!=='' ? Math.round(w['Sommeil Perf %']) : '—'}% · ${minToHM(w && w['Temps au Lit'])} au lit`, 100, 696);
+  ctx.font = '700 32px "Fraunces", serif'; ctx.fillStyle = '#FFFFFF';
+  ctx.fillText('Sommeil', 100, y);
 
-  if(w && w['Temps au Lit']){
-    const profond=num(w['Sommeil Profond'])||0, rem=num(w['Sommeil REM'])||0, leger=num(w['Sommeil Léger'])||0, eveil=num(w['Temps Éveillé'])||0;
-    const totalSeg = profond+rem+leger+eveil || 1;
-    const barY=730, barH=26, barW=880, barX=100;
-    let cx = barX;
-    [[profond,'#4FA9E8'],[rem,'#C9A227'],[leger,'#35D07F'],[eveil,'#545454']].forEach(([v,color])=>{
-      const segW = (v/totalSeg)*barW;
-      ctx.fillStyle = color; ctx.fillRect(cx, barY, segW, barH);
-      cx += segW;
-    });
-  }
+  y += 60;
+  drawStat(col[0]-40, y, 'PERFORMANCE', w && w['Sommeil Perf %']!=='' ? Math.round(w['Sommeil Perf %'])+'%' : '—');
+  drawStat(col[1]-40, y, 'EFFICACITÉ', w && w['Sommeil Efficacité %']!=='' ? Math.round(w['Sommeil Efficacité %'])+'%' : '—');
+  drawStat(col[2]-40, y, 'TEMPS AU LIT', minToHM(w && w['Temps au Lit']));
 
-  // Mensurations
-  ctx.font = '700 30px "Fraunces", serif'; ctx.fillStyle = '#FFFFFF';
-  ctx.fillText('Mensurations', 100, 860);
-  const meas = [['Poids','kg'],['IMG','%'],['Tour de taille','cm']];
-  let my = 900;
-  meas.forEach(([field,unit])=>{
+  y += 70;
+  const profond=num(w && w['Sommeil Profond'])||0, rem=num(w && w['Sommeil REM'])||0, leger=num(w && w['Sommeil Léger'])||0, eveil=num(w && w['Temps Éveillé'])||0;
+  const totalSeg = profond+rem+leger+eveil || 1;
+  const barY=y, barH=28, barW=880, barX=100;
+  let cx = barX;
+  [[profond,'#4FA9E8'],[rem,'#C9A227'],[leger,'#35D07F'],[eveil,'#545454']].forEach(([v,color])=>{
+    const segW = (v/totalSeg)*barW;
+    ctx.fillStyle = color; ctx.fillRect(cx, barY, segW, barH);
+    cx += segW;
+  });
+
+  y += 60;
+  ctx.font = '500 20px "Space Grotesk", sans-serif';
+  const legendItems = [['Profond',profond,'#4FA9E8'],['REM',rem,'#C9A227'],['Léger',leger,'#35D07F'],['Éveillé',eveil,'#545454']];
+  let lx = 100;
+  legendItems.forEach(([label,val,color])=>{
+    ctx.fillStyle = color; ctx.fillRect(lx, y-16, 14, 14);
+    ctx.fillStyle = '#9B9B9B';
+    const txt = `${label} ${minToHM(val)}`;
+    ctx.fillText(txt, lx+20, y);
+    lx += ctx.measureText(txt).width + 60;
+  });
+
+  // --- Mensurations (les 8 champs) ---
+  y += 90;
+  ctx.font = '700 32px "Fraunces", serif'; ctx.fillStyle = '#FFFFFF';
+  ctx.fillText('Mensurations', 100, y);
+
+  y += 50;
+  const measFields = [
+    ['Poids','kg',1], ['IMC','',1], ['IMG','%',1], ['Tour de taille','cm',0],
+    ['Poids sans graisse','kg',1], ['Graisse corporelle','%',1], ['Graisse viscérale','',1], ['Graisse sous-cutanée','%',1]
+  ];
+  measFields.forEach(([field,unit,dec])=>{
     const entry = health.slice().reverse().find(h=>h[field]!=='' && h[field]!==undefined);
     ctx.font = '500 24px "Space Grotesk", sans-serif'; ctx.fillStyle = '#9B9B9B';
-    ctx.fillText(field, 100, my);
+    ctx.textAlign='left';
+    ctx.fillText(field, 100, y);
     ctx.font = '600 24px "IBM Plex Mono", monospace'; ctx.fillStyle = '#FFFFFF';
     ctx.textAlign='right';
-    ctx.fillText(entry ? `${num(entry[field]).toFixed(1)}${unit}` : '—', 980, my);
-    ctx.textAlign='left';
-    my += 42;
+    ctx.fillText(entry ? `${num(entry[field]).toFixed(dec)}${unit}` : '—', 980, y);
+    ctx.beginPath(); ctx.moveTo(100, y+18); ctx.lineTo(980, y+18);
+    ctx.strokeStyle = 'rgba(255,255,255,0.08)'; ctx.lineWidth = 1; ctx.stroke();
+    y += 52;
   });
 
   ctx.textAlign='center';
   ctx.font='600 20px "Space Grotesk", sans-serif'; ctx.fillStyle='#545454';
-  ctx.fillText('performance-journal', canvas.width/2, canvas.height-60);
+  ctx.fillText('performance-journal', W/2, H-50);
 
   canvas.toBlob(blob=>{
     const file = new File([blob], `matin-${today}.png`, { type:'image/png' });
