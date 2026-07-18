@@ -492,6 +492,7 @@ body{
   font-weight:600; font-size:14px; padding: 12px 28px; border-radius: var(--radius-md); cursor:pointer;
 }
 #pinError{ color: var(--rust); font-size: 13px; margin-top: 12px; min-height: 18px; }
+.version-tag{ position:fixed; bottom:16px; left:0; right:0; text-align:center; font-size:11px; color: var(--text-faint); font-family:'IBM Plex Mono',monospace; }
 
 /* ---------- Pull to refresh ---------- */
 #pullIndicator{
@@ -517,6 +518,7 @@ body{
     <br>
     <button id="pinSubmit" onclick="checkPin()">Déverrouiller</button>
     <div id="pinError"></div>
+    <div class="version-tag">v15.0</div>
   </div>
 
   <div id="loadingState" style="display:none;">Chargement des données…</div>
@@ -879,10 +881,16 @@ function toggleBilan(){
   toggle.classList.toggle('open');
 }
 
-// --- Pull to refresh ---
+// --- Pull to refresh + Swipe horizontal entre onglets ---
 let pullStartY = null;
+let swipeStartX = null, swipeStartY = null;
+const TAB_ORDER = ['today','morning','week','sante','progression','reference','history'];
 const pullIndicator = document.getElementById('pullIndicator');
-document.addEventListener('touchstart', e => { if(window.scrollY===0) pullStartY = e.touches[0].clientY; }, {passive:true});
+document.addEventListener('touchstart', e => {
+  if(window.scrollY===0) pullStartY = e.touches[0].clientY;
+  swipeStartX = e.touches[0].clientX;
+  swipeStartY = e.touches[0].clientY;
+}, {passive:true});
 document.addEventListener('touchmove', e => {
   if(pullStartY===null) return;
   const dy = e.touches[0].clientY - pullStartY;
@@ -893,7 +901,23 @@ document.addEventListener('touchmove', e => {
     pullIndicator.classList.toggle('ready', dist>55);
   }
 }, {passive:true});
-document.addEventListener('touchend', () => {
+document.addEventListener('touchend', e => {
+  // Swipe horizontal → changer d'onglet
+  if(swipeStartX!==null && e.changedTouches && e.changedTouches.length){
+    const endX = e.changedTouches[0].clientX, endY = e.changedTouches[0].clientY;
+    const dx = endX - swipeStartX, dy = endY - swipeStartY;
+    if(Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy)*1.5){
+      const activeBtn = document.querySelector('.tab-btn.active');
+      const current = activeBtn ? activeBtn.dataset.page : 'today';
+      let idx = TAB_ORDER.indexOf(current);
+      if(dx < 0 && idx < TAB_ORDER.length-1) idx++;
+      else if(dx > 0 && idx > 0) idx--;
+      switchPage(TAB_ORDER[idx]);
+    }
+  }
+  swipeStartX = null; swipeStartY = null;
+
+  // Pull to refresh
   if(pullStartY===null) return;
   if(pullIndicator.classList.contains('ready')){
     pullIndicator.classList.add('spinning');
