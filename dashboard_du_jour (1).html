@@ -123,6 +123,56 @@ body{
 [data-skin="sober"] .hero-num,
 [data-skin="sober"] .score-num{ font-weight:500; letter-spacing:-0.02em; }
 
+/* ---------- Mode FLASHY (néon / "cyber premium") ---------- */
+[data-skin="flashy"]{
+  --gold: #00E5FF;
+  --emerald: #39FF88;
+  --rust: #FF2E6C;
+  --blue: #B14EFF;
+  --bg-glow:
+    radial-gradient(ellipse 1200px 700px at 50% -15%, rgba(0,229,255,0.22), transparent 60%),
+    radial-gradient(ellipse 900px 600px at 100% 10%, rgba(177,78,255,0.16), transparent 60%),
+    radial-gradient(ellipse 900px 600px at 0% 30%, rgba(255,46,108,0.10), transparent 60%);
+}
+[data-skin="flashy"] body{
+  background-image:
+    linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px);
+  background-size: 26px 26px, 26px 26px;
+}
+[data-skin="flashy"] .card{ box-shadow: 0 0 0 1px rgba(0,229,255,0.12), 0 0 26px rgba(0,229,255,0.07); }
+[data-skin="flashy"] .hero-card::after,
+[data-skin="flashy"] .score-hero::after{
+  height:3px;
+  background: linear-gradient(90deg, #00E5FF, #B14EFF, #FF2E6C, #00E5FF);
+  background-size: 300% 100%;
+  animation: neonSlide 6s linear infinite;
+}
+@keyframes neonSlide{ to{ background-position: 300% 0; } }
+[data-skin="flashy"] .hero-num,
+[data-skin="flashy"] .score-num{
+  background: linear-gradient(90deg, #00E5FF, #B14EFF 55%, #FF2E6C);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 0 20px rgba(0,229,255,0.35));
+}
+[data-skin="flashy"] .quick-btn{
+  background: linear-gradient(135deg, #00E5FF, #B14EFF); color:#050505; border:none;
+  box-shadow: 0 0 20px rgba(0,229,255,0.4);
+}
+[data-skin="flashy"] .quick-btn.emerald{
+  background: rgba(255,255,255,0.04); color: var(--text);
+  border:1px solid rgba(0,229,255,0.45); box-shadow:none;
+}
+[data-skin="flashy"] .tab-btn.active{
+  background: rgba(0,229,255,0.15); color:#00E5FF; box-shadow: 0 0 14px rgba(0,229,255,0.4) inset;
+}
+[data-skin="flashy"] .eyebrow .dot{
+  background: linear-gradient(90deg,#00E5FF,#B14EFF); box-shadow: 0 0 10px rgba(0,229,255,0.65);
+}
+[data-skin="flashy"] .gauge-fill,
+[data-skin="flashy"] .progress-fill{ box-shadow: 0 0 18px currentColor; }
+[data-skin="flashy"] .ring-wrap svg circle[stroke]{ filter: drop-shadow(0 0 6px currentColor); }
+
 /* ---------- Cards ---------- */
 .card{
   background: linear-gradient(180deg, var(--surface-3), var(--surface));
@@ -650,6 +700,9 @@ body{
 
     <!-- ============ PAGE : MATIN ============ -->
     <div class="page" id="page-morning">
+      <button class="quick-btn emerald" style="width:100%; justify-content:center; margin-bottom:14px; cursor:pointer; border:1px solid var(--hairline-strong);" onclick="shareMorningCard()">
+        <span class="dot"></span>Partager mon brief du matin
+      </button>
       <div id="morningContent"></div>
     </div>
 
@@ -692,6 +745,7 @@ body{
 (function applyAutoTheme(){
   const hour = Number(new Intl.DateTimeFormat('fr-FR',{hour:'2-digit',hour12:false,timeZone:'Europe/Paris'}).format(new Date()));
   document.documentElement.setAttribute('data-theme', (hour>=7 && hour<19) ? 'light' : 'dark');
+  document.documentElement.setAttribute('data-skin', 'flashy');
 })();
 
 let LAST_DATA = null; // conservé en mémoire pour l'onglet Progression (pas de re-fetch au changement d'exercice)
@@ -1287,6 +1341,102 @@ function renderReference(data){
   }
 
   container.innerHTML = scoreHtml + breakdownHtml + balanceHtml + seanceHtml + repasHtml;
+}
+
+async function shareMorningCard(){
+  const data = LAST_DATA;
+  if(!data) return;
+  await document.fonts.ready;
+
+  const today = todayStr();
+  const whoop = data.whoop||[], health = data.health||[];
+  const w = whoop.find(x=>x['Date']===today);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = 1080; canvas.height = 1500;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#050505'; ctx.fillRect(0,0,canvas.width,canvas.height);
+  const grad = ctx.createRadialGradient(540,-100,100,540,300,700);
+  grad.addColorStop(0,'rgba(53,208,127,0.22)'); grad.addColorStop(1,'rgba(53,208,127,0)');
+  ctx.fillStyle = grad; ctx.fillRect(0,0,canvas.width,700);
+
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#35D07F';
+  ctx.font = '700 26px "Space Grotesk", sans-serif';
+  ctx.fillText('MORNING BRIEF', canvas.width/2, 110);
+
+  ctx.fillStyle = '#FFFFFF';
+  ctx.font = '500 38px "Fraunces", serif';
+  ctx.fillText(fmtDateLabel(today), canvas.width/2, 168);
+
+  ctx.font = '700 150px "Fraunces", serif';
+  ctx.fillStyle = '#35D07F';
+  ctx.fillText(w && w['Récupération %']!=='' ? Math.round(w['Récupération %'])+'%' : '—', canvas.width/2, 380);
+  ctx.font = '600 26px "Space Grotesk", sans-serif'; ctx.fillStyle = '#9B9B9B';
+  ctx.fillText('RÉCUPÉRATION', canvas.width/2, 430);
+
+  const statY = 520;
+  function drawStat(x, label, value){
+    ctx.font = '600 38px "IBM Plex Mono", monospace'; ctx.fillStyle = '#FFFFFF';
+    ctx.fillText(value, x, statY);
+    ctx.font = '700 16px "Space Grotesk", sans-serif'; ctx.fillStyle = '#9B9B9B';
+    ctx.fillText(label, x, statY+30);
+  }
+  drawStat(canvas.width*0.16, 'VFC', w && w['VFC (HRV)']!=='' ? String(Math.round(w['VFC (HRV)'])) : '—');
+  drawStat(canvas.width*0.38, 'FC REPOS', w && w['FCR (RHR)']!=='' ? String(Math.round(w['FCR (RHR)'])) : '—');
+  drawStat(canvas.width*0.62, 'SPO2', w && w['SpO2']!=='' ? Math.round(w['SpO2'])+'%' : '—');
+  drawStat(canvas.width*0.84, 'RESP.', w && w['Freq Respiratoire']!=='' ? num(w['Freq Respiratoire']).toFixed(1) : '—');
+
+  // Sommeil
+  ctx.textAlign='left';
+  ctx.font = '700 30px "Fraunces", serif'; ctx.fillStyle = '#FFFFFF';
+  ctx.fillText('Sommeil', 100, 660);
+  ctx.font = '500 22px "Space Grotesk", sans-serif'; ctx.fillStyle = '#9B9B9B';
+  ctx.fillText(`Performance ${w && w['Sommeil Perf %']!=='' ? Math.round(w['Sommeil Perf %']) : '—'}% · ${minToHM(w && w['Temps au Lit'])} au lit`, 100, 696);
+
+  if(w && w['Temps au Lit']){
+    const profond=num(w['Sommeil Profond'])||0, rem=num(w['Sommeil REM'])||0, leger=num(w['Sommeil Léger'])||0, eveil=num(w['Temps Éveillé'])||0;
+    const totalSeg = profond+rem+leger+eveil || 1;
+    const barY=730, barH=26, barW=880, barX=100;
+    let cx = barX;
+    [[profond,'#4FA9E8'],[rem,'#C9A227'],[leger,'#35D07F'],[eveil,'#545454']].forEach(([v,color])=>{
+      const segW = (v/totalSeg)*barW;
+      ctx.fillStyle = color; ctx.fillRect(cx, barY, segW, barH);
+      cx += segW;
+    });
+  }
+
+  // Mensurations
+  ctx.font = '700 30px "Fraunces", serif'; ctx.fillStyle = '#FFFFFF';
+  ctx.fillText('Mensurations', 100, 860);
+  const meas = [['Poids','kg'],['IMG','%'],['Tour de taille','cm']];
+  let my = 900;
+  meas.forEach(([field,unit])=>{
+    const entry = health.slice().reverse().find(h=>h[field]!=='' && h[field]!==undefined);
+    ctx.font = '500 24px "Space Grotesk", sans-serif'; ctx.fillStyle = '#9B9B9B';
+    ctx.fillText(field, 100, my);
+    ctx.font = '600 24px "IBM Plex Mono", monospace'; ctx.fillStyle = '#FFFFFF';
+    ctx.textAlign='right';
+    ctx.fillText(entry ? `${num(entry[field]).toFixed(1)}${unit}` : '—', 980, my);
+    ctx.textAlign='left';
+    my += 42;
+  });
+
+  ctx.textAlign='center';
+  ctx.font='600 20px "Space Grotesk", sans-serif'; ctx.fillStyle='#545454';
+  ctx.fillText('performance-journal', canvas.width/2, canvas.height-60);
+
+  canvas.toBlob(blob=>{
+    const file = new File([blob], `matin-${today}.png`, { type:'image/png' });
+    if(navigator.canShare && navigator.canShare({ files:[file] })){
+      navigator.share({ files:[file], title:'Mon brief du matin', text:`Récup du ${fmtDateLabel(today)}` }).catch(()=>{});
+    } else {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href=url; a.download=`matin-${today}.png`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+  }, 'image/png');
 }
 
 async function shareDayCard(){
