@@ -361,6 +361,23 @@ body{
 .health-stats-row b{ color:var(--text); font-family:'IBM Plex Mono',monospace; font-weight:700; }
 .health-empty{ text-align:center; color:var(--text-faint); font-size:13px; padding:20px 0; }
 
+/* ---------- Matin ---------- */
+.morning-stat-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+.morning-stat{ background: var(--surface-2); border-radius:var(--radius-sm); padding:12px 8px; text-align:center; }
+.morning-stat .ms-val{ font-size:16px; font-weight:700; font-family:'IBM Plex Mono',monospace; }
+.morning-stat .ms-label{ font-size:9px; text-transform:uppercase; letter-spacing:.05em; color:var(--text-faint); margin-top:3px; }
+
+.sleep-bar{ display:flex; height:16px; border-radius:8px; overflow:hidden; margin:16px 0 10px; }
+.sleep-bar .seg{ height:100%; }
+.sleep-legend{ display:flex; flex-wrap:wrap; gap:12px; font-size:10.5px; color:var(--text-dim); }
+.sleep-legend .lg-dot{ width:8px; height:8px; border-radius:2px; display:inline-block; margin-right:5px; vertical-align:middle; }
+
+.meas-row{ display:flex; justify-content:space-between; align-items:baseline; padding:11px 0; border-top:1px solid var(--hairline); }
+.meas-row:first-child{ border-top:none; }
+.meas-label{ font-size:13px; color:var(--text-dim); }
+.meas-value{ font-size:15px; font-weight:700; font-family:'IBM Plex Mono',monospace; }
+.meas-date{ font-size:9.5px; color:var(--text-faint); margin-left:6px; }
+
 /* ---------- Tab bar ---------- */
 .tabbar{
   position:fixed; bottom:0; left:0; right:0; z-index:40;
@@ -370,13 +387,13 @@ body{
   display:flex; justify-content:space-around;
 }
 .tab-btn{
-  display:flex; flex-direction:column; align-items:center; gap:3px;
+  display:flex; flex-direction:column; align-items:center; gap:2px;
   background:none; border:none; color: var(--text-faint); cursor:pointer;
-  font-family:'Space Grotesk',sans-serif; font-size:8.5px; font-weight:700;
-  letter-spacing:.01em; padding:5px 6px; border-radius:11px; transition: color .2s, background .2s;
+  font-family:'Space Grotesk',sans-serif; font-size:7.5px; font-weight:700;
+  letter-spacing:0; padding:4px 3px; border-radius:10px; transition: color .2s, background .2s;
 }
 .tab-btn.active{ color: var(--gold); background: var(--gold-soft); }
-.tab-btn svg{ width:17px; height:17px; }
+.tab-btn svg{ width:16px; height:16px; }
 
 /* ---------- Pages ---------- */
 .page{ display:none; }
@@ -631,6 +648,11 @@ body{
       <div id="santeContent"></div>
     </div>
 
+    <!-- ============ PAGE : MATIN ============ -->
+    <div class="page" id="page-morning">
+      <div id="morningContent"></div>
+    </div>
+
   </div>
 </div>
 
@@ -639,9 +661,13 @@ body{
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
     Jour
   </button>
+  <button class="tab-btn" data-page="morning" onclick="switchPage('morning')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="17" r="4"/><path d="M12 2v3M4.2 10.2l2.1 2.1M19.8 10.2l-2.1 2.1M2 17h2M20 17h2M5 21h14"/></svg>
+    Matin
+  </button>
   <button class="tab-btn" data-page="week" onclick="switchPage('week')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/></svg>
-    Semaine
+    Sem.
   </button>
   <button class="tab-btn" data-page="sante" onclick="switchPage('sante')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 8.5c0-2.5-2-4.5-4.5-4.5-1.6 0-3 .8-3.5 2-.5-1.2-1.9-2-3.5-2C6 4 4 6 4 8.5c0 5 8 10.5 8 10.5s8-5.5 8-10.5z"/></svg>
@@ -649,7 +675,7 @@ body{
   </button>
   <button class="tab-btn" data-page="progression" onclick="switchPage('progression')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19l6-7 4 4 6-9"/></svg>
-    Progrès
+    Prog.
   </button>
   <button class="tab-btn" data-page="reference" onclick="switchPage('reference')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l2.9 6.6 7.1.7-5.4 4.7 1.7 7-6.3-3.9-6.3 3.9 1.7-7-5.4-4.7 7.1-.7z"/></svg>
@@ -798,6 +824,7 @@ async function load(isManual){
     renderHistory(data);
     renderHeatmap(data);
     renderSante(data);
+    renderMorning(data);
     renderHeaderExtras(data);
     renderProgressionSetup(data);
     renderReference(data);
@@ -1410,6 +1437,78 @@ function toggleSeanceDetail(dateKey, event){
   // recalcule la hauteur du parent (journal-detail) pour que rien ne soit coupé
   const parentDetail = card.closest('.journal-detail');
   if(parentDetail && parentDetail.style.maxHeight) requestAnimationFrame(()=>{ parentDetail.style.maxHeight = parentDetail.scrollHeight + 'px'; });
+}
+
+function minToHM(min){
+  if(min===null || min===undefined || min==='') return '—';
+  const h = Math.floor(min/60), m = Math.round(min%60);
+  return `${h}h${String(m).padStart(2,'0')}`;
+}
+
+function renderMorning(data){
+  const whoop = data.whoop || [], health = data.health || [];
+  const today = todayStr();
+  const w = whoop.find(x=>x['Date']===today);
+  const container = document.getElementById('morningContent');
+
+  // --- Récupération détaillée ---
+  const recupCard = `
+    <div class="card fade-in">
+      <p class="eyebrow"><span class="dot"></span>Récupération</p>
+      <div class="morning-stat-grid">
+        <div class="morning-stat"><div class="ms-val">${w && w['Récupération %']!=='' ? Math.round(w['Récupération %'])+'%' : '—'}</div><div class="ms-label">Récup.</div></div>
+        <div class="morning-stat"><div class="ms-val">${w && w['VFC (HRV)']!=='' ? Math.round(w['VFC (HRV)']) : '—'}</div><div class="ms-label">VFC (ms)</div></div>
+        <div class="morning-stat"><div class="ms-val">${w && w['FCR (RHR)']!=='' ? Math.round(w['FCR (RHR)']) : '—'}</div><div class="ms-label">FC repos</div></div>
+        <div class="morning-stat"><div class="ms-val">${w && w['SpO2']!=='' ? Math.round(w['SpO2'])+'%' : '—'}</div><div class="ms-label">SpO2</div></div>
+        <div class="morning-stat"><div class="ms-val">${w && w['Temp Cutanée']!=='' ? num(w['Temp Cutanée']).toFixed(1)+'°' : '—'}</div><div class="ms-label">Temp. cutanée</div></div>
+        <div class="morning-stat"><div class="ms-val">${w && w['Freq Respiratoire']!=='' ? num(w['Freq Respiratoire']).toFixed(1) : '—'}</div><div class="ms-label">Freq. resp.</div></div>
+      </div>
+    </div>`;
+
+  // --- Sommeil avec répartition par phase ---
+  let sleepCard;
+  if(w && w['Temps au Lit']){
+    const profond = num(w['Sommeil Profond'])||0, rem = num(w['Sommeil REM'])||0, leger = num(w['Sommeil Léger'])||0, eveil = num(w['Temps Éveillé'])||0;
+    const totalSeg = profond+rem+leger+eveil || 1;
+    sleepCard = `
+      <div class="card fade-in">
+        <p class="eyebrow"><span class="dot"></span>Sommeil</p>
+        <div class="morning-stat-grid">
+          <div class="morning-stat"><div class="ms-val">${w['Sommeil Perf %']!=='' ? Math.round(w['Sommeil Perf %'])+'%' : '—'}</div><div class="ms-label">Performance</div></div>
+          <div class="morning-stat"><div class="ms-val">${w['Sommeil Efficacité %']!=='' ? Math.round(w['Sommeil Efficacité %'])+'%' : '—'}</div><div class="ms-label">Efficacité</div></div>
+          <div class="morning-stat"><div class="ms-val">${minToHM(w['Temps au Lit'])}</div><div class="ms-label">Temps au lit</div></div>
+        </div>
+        <div class="sleep-bar">
+          <div class="seg" style="width:${(profond/totalSeg)*100}%; background:#4FA9E8;"></div>
+          <div class="seg" style="width:${(rem/totalSeg)*100}%; background:#C9A227;"></div>
+          <div class="seg" style="width:${(leger/totalSeg)*100}%; background:#35D07F;"></div>
+          <div class="seg" style="width:${(eveil/totalSeg)*100}%; background:#545454;"></div>
+        </div>
+        <div class="sleep-legend">
+          <span><span class="lg-dot" style="background:#4FA9E8;"></span>Profond ${minToHM(profond)}</span>
+          <span><span class="lg-dot" style="background:#C9A227;"></span>REM ${minToHM(rem)}</span>
+          <span><span class="lg-dot" style="background:#35D07F;"></span>Léger ${minToHM(leger)}</span>
+          <span><span class="lg-dot" style="background:#545454;"></span>Éveillé ${minToHM(eveil)}</span>
+        </div>
+      </div>`;
+  } else {
+    sleepCard = `<div class="card fade-in"><p class="eyebrow"><span class="dot"></span>Sommeil</p><div class="empty">Pas de données de sommeil pour cette nuit</div></div>`;
+  }
+
+  // --- Mensurations (dernière valeur connue pour chaque champ) ---
+  const measFields = [
+    ['Poids','kg',1], ['IMC','',1], ['IMG','%',1], ['Tour de taille','cm',0],
+    ['Poids sans graisse','kg',1], ['Graisse corporelle','%',1], ['Graisse viscérale','',1], ['Graisse sous-cutanée','%',1]
+  ];
+  const measRows = measFields.map(([field,unit,dec])=>{
+    const entry = health.slice().reverse().find(h=>h[field]!=='' && h[field]!==undefined);
+    if(!entry) return `<div class="meas-row"><span class="meas-label">${field}</span><span class="meas-value">—</span></div>`;
+    const dateNote = entry['Date']!==today ? `<span class="meas-date">${fmtShort(entry['Date']).day} ${fmtShort(entry['Date']).month}</span>` : '';
+    return `<div class="meas-row"><span class="meas-label">${field}</span><span>${dateNote}<span class="meas-value">${num(entry[field]).toFixed(dec)}${unit}</span></span></div>`;
+  }).join('');
+  const measCard = `<div class="card fade-in"><p class="eyebrow"><span class="dot"></span>Mensurations</p>${measRows}</div>`;
+
+  container.innerHTML = recupCard + sleepCard + measCard;
 }
 
 function buildLineSVG(values, colorHex, w, h, pad){
