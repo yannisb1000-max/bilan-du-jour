@@ -110,20 +110,28 @@ body{
   display:flex; align-items:center; gap:5px; background: var(--gold-soft); color: var(--gold);
   font-size:11px; font-weight:600; padding:5px 10px; border-radius:20px; margin-top:6px; width:fit-content;
 }
-#refreshBtn{
+#refreshBtn, #skinBtn, #searchBtn, #notifBtn, #focusBtn{
   background: var(--surface-2); border:1px solid var(--hairline-strong); color: var(--text-dim);
   width:36px; height:36px; border-radius:50%; cursor:pointer;
-  display:flex; align-items:center; justify-content:center;
+  display:flex; align-items:center; justify-content:center; position:relative;
   transition: border-color .2s, color .2s;
 }
-#refreshBtn:hover{ border-color: var(--gold); color: var(--gold); }
+#refreshBtn:hover, #skinBtn:hover, #searchBtn:hover, #notifBtn:hover, #focusBtn:hover{ border-color: var(--gold); color: var(--gold); }
 #refreshBtn.spin svg{ animation: spin .7s linear; }
-#skinBtn{
-  background: var(--surface-2); border:1px solid var(--hairline-strong); color: var(--text-dim);
-  width:36px; height:36px; border-radius:50%; cursor:pointer;
-  display:flex; align-items:center; justify-content:center; transition: border-color .2s, color .2s;
+#focusBtn.active{ color: var(--gold); border-color: var(--gold); }
+.notif-badge{
+  position:absolute; top:-4px; right:-4px; min-width:16px; height:16px; padding:0 3px; border-radius:8px;
+  background: var(--rust); color:#fff; font-size:9.5px; font-weight:700; display:flex; align-items:center; justify-content:center;
+  font-family:'Space Grotesk',sans-serif; line-height:1;
 }
-#skinBtn:hover{ border-color: var(--gold); color: var(--gold); }
+body.focus-mode .tabbar, body.focus-mode .topbar{ display:none !important; }
+body.focus-mode #focusExitBtn{ display:flex !important; }
+#focusExitBtn{
+  display:none; position:fixed; bottom:20px; right:20px; z-index:45;
+  background: var(--surface-2); border:1px solid var(--hairline-strong); color: var(--gold);
+  width:44px; height:44px; border-radius:50%; cursor:pointer; align-items:center; justify-content:center;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+}
 #skinBtn.sober-active{ color: var(--gold); border-color: var(--gold); }
 @keyframes spin{ to{ transform: rotate(360deg); } }
 
@@ -417,12 +425,15 @@ body{
 .seance-list-row .chevron{ color: var(--text-faint); flex-shrink:0; }
 
 /* ---------- Séance : détail plein écran (style Whoop) ---------- */
-#seanceDetailOverlay, #exerciseDetailOverlay{
+#seanceDetailOverlay, #exerciseDetailOverlay, #seanceDraftOverlay, #searchOverlay, #notifOverlay{
   position:fixed; inset:0; z-index:70; overflow-y:auto; -webkit-overflow-scrolling:touch;
   background: var(--bg-glow), var(--bg); display:none;
 }
 #exerciseDetailOverlay{ z-index:75; }
-#seanceDetailOverlay.open, #exerciseDetailOverlay.open{ display:block; }
+#seanceDraftOverlay{ z-index:76; }
+#notifOverlay{ z-index:77; }
+#searchOverlay{ z-index:80; }
+#seanceDetailOverlay.open, #exerciseDetailOverlay.open, #seanceDraftOverlay.open, #searchOverlay.open, #notifOverlay.open{ display:block; }
 .sd-topbar{
   display:flex; align-items:center; justify-content:space-between;
   max-width:520px; margin:0 auto; padding: calc(env(safe-area-inset-top) + 18px) 18px 8px;
@@ -587,7 +598,7 @@ body{
     <br>
     <button id="pinSubmit" onclick="checkPin()">Déverrouiller</button>
     <div id="pinError"></div>
-    <div class="version-tag">v17.0</div>
+    <div class="version-tag">v18.0</div>
   </div>
 
   <div id="loadingState" style="display:none;">Chargement des données…</div>
@@ -619,6 +630,15 @@ body{
         <div class="streak-badge" id="streakBadge" style="display:none;"></div>
       </div>
       <div style="display:flex; gap:8px;">
+        <button id="searchBtn" aria-label="Rechercher" onclick="openSearch()" title="Rechercher (Ctrl/Cmd+K)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>
+        </button>
+        <button id="notifBtn" aria-label="Notifications" onclick="openNotifPanel()" title="Notifications">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+        </button>
+        <button id="focusBtn" aria-label="Mode focus" onclick="toggleFocusMode()" title="Mode focus">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M8 3H5a2 2 0 00-2 2v3M16 3h3a2 2 0 012 2v3M8 21H5a2 2 0 01-2-2v-3M16 21h3a2 2 0 002-2v-3"/></svg>
+        </button>
         <button id="skinBtn" aria-label="Changer d'ambiance" onclick="toggleSkin()" title="Sobre / Flashy">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 2l1.8 5.6L19 9l-5.2 1.4L12 16l-1.8-5.6L5 9l5.2-1.4z"/></svg>
         </button>
@@ -632,6 +652,28 @@ body{
     <div class="page active" id="page-today">
 
       <div id="riskBanner"></div>
+
+      <div class="card hero-card fade-in" id="readinessCard" style="display:none;">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+          <p class="eyebrow" style="margin:0;"><span class="dot"></span>Score de préparation</p>
+          <button class="sd-icon-btn" style="width:26px; height:26px; flex-shrink:0;" onclick="toggleReadinessConfig()" aria-label="Configurer les pondérations">⚙</button>
+        </div>
+        <div class="hero-num"><span class="mono" id="readinessVal">—</span><span class="unit">/100</span></div>
+        <div class="hero-sub" id="readinessStateLabel"></div>
+        <div class="poids-note" id="readinessConfidence"></div>
+        <div class="score-breakdown" id="readinessBreakdown" style="margin-top:16px;"></div>
+        <div class="ressenti-row" id="readinessContext" style="margin-top:14px;"></div>
+        <div id="readinessConfigPanel" style="display:none; margin-top:16px; padding-top:16px; border-top:1px solid var(--hairline);">
+          <div class="progress-head"><span>Récupération (%)</span></div>
+          <input type="number" id="rwRecup" class="seance-filter-date" style="margin-bottom:10px;" min="0" max="100">
+          <div class="progress-head"><span>Sommeil (%)</span></div>
+          <input type="number" id="rwSommeil" class="seance-filter-date" style="margin-bottom:10px;" min="0" max="100">
+          <div class="progress-head"><span>Récupération de charge liée au strain (%)</span></div>
+          <input type="number" id="rwStrain" class="seance-filter-date" style="margin-bottom:14px;" min="0" max="100">
+          <button class="quick-btn" style="width:100%; justify-content:center; cursor:pointer; border:none;" onclick="saveReadinessWeights()"><span class="dot"></span>Enregistrer les pondérations</button>
+          <div class="poids-note" style="margin-top:8px;">Exprimées en %, renormalisées automatiquement pour totaliser 100.</div>
+        </div>
+      </div>
 
       <div class="card hero-card fade-in">
         <p class="eyebrow"><span class="dot"></span>Bilan calorique</p>
@@ -694,6 +736,24 @@ body{
         </div>
       </div>
 
+      <div class="card fade-in" id="coachCard" style="display:none;">
+        <p class="eyebrow"><span class="dot"></span>Coach (calculé localement)</p>
+        <div class="reco-type" id="coachType">—</div>
+        <div class="stat-grid" style="margin-top:12px;">
+          <div class="stat"><div class="stat-val" id="coachDuree">—</div><div class="stat-label">Durée cible</div></div>
+          <div class="stat"><div class="stat-val" id="coachStrain">—</div><div class="stat-label">Strain cible</div></div>
+          <div class="stat"><div class="stat-val" id="coachRpe">—</div><div class="stat-label">RPE cible</div></div>
+        </div>
+        <div class="ressenti-row" id="coachGroupes" style="margin-top:12px;"></div>
+        <div class="poids-note" id="coachJustification" style="margin-top:10px;"></div>
+        <div id="coachExercicesWrap" style="margin-top:12px;">
+          <div class="jd-section-label" style="margin:0 0 8px;">Exercices proposés</div>
+          <div class="ressenti-row" id="coachExercices"></div>
+        </div>
+        <div class="poids-note" id="coachAlternative" style="margin-top:10px; font-style:italic;"></div>
+        <button class="quick-btn emerald" style="width:100%; justify-content:center; margin-top:14px; cursor:pointer; border:1px solid var(--hairline-strong);" onclick="createSeanceDraft()"><span class="dot"></span>Créer ma séance (brouillon local)</button>
+      </div>
+
       <div class="card fade-in">
         <p class="eyebrow"><span class="dot"></span>Actions rapides</p>
         <div class="quick-actions">
@@ -741,6 +801,8 @@ body{
     <!-- ============ PAGE : SEMAINE ============ -->
     <div class="page" id="page-week">
 
+      <div id="momentumContent"></div>
+
       <div class="card fade-in">
         <p class="eyebrow"><span class="dot"></span>Cette semaine</p>
         <div class="week-summary-grid">
@@ -754,7 +816,10 @@ body{
           <span><span class="lg-dot" style="background:var(--blue);"></span>Dépensé</span>
           <span><span class="lg-dot" style="background:var(--gold);"></span>Mangé</span>
         </div>
+        <div id="weekDayDetail"></div>
       </div>
+
+      <div id="weekComparisonContent"></div>
 
       <div class="card fade-in">
         <p class="eyebrow"><span class="dot"></span>Records personnels</p>
@@ -816,6 +881,37 @@ body{
     <!-- ============ PAGE : PROGRESSION ============ -->
     <div class="page" id="page-progression">
       <div class="card fade-in">
+        <p class="eyebrow"><span class="dot"></span>Objectifs</p>
+        <div id="goalsList"></div>
+        <button class="quick-btn emerald" style="width:100%; justify-content:center; margin-top:10px; cursor:pointer; border:1px solid var(--hairline-strong);" onclick="toggleGoalForm()"><span class="dot"></span>Nouvel objectif</button>
+        <div id="goalFormPanel" style="display:none; margin-top:14px; padding-top:14px; border-top:1px solid var(--hairline);">
+          <input type="text" id="goalTitre" class="seance-filter-date" placeholder="Titre (ex : Bench Press 100kg)" style="margin-bottom:8px; width:100%;">
+          <select id="goalCategorie" class="exo-select" style="margin-bottom:8px;" onchange="onGoalCategorieChange()">
+            <option value="poids">Poids</option>
+            <option value="exercice">Charge d'un exercice</option>
+            <option value="mesure">Mesure corporelle</option>
+            <option value="personnalise">Personnalisé (saisie manuelle)</option>
+          </select>
+          <select id="goalMetric" class="exo-select" style="margin-bottom:8px; display:none;"></select>
+          <div style="display:flex; gap:8px; margin-bottom:8px;">
+            <input type="number" id="goalCible" class="seance-filter-date" placeholder="Valeur cible">
+            <input type="text" id="goalUnite" class="seance-filter-date" placeholder="Unité">
+          </div>
+          <input type="date" id="goalDateCible" class="seance-filter-date" style="margin-bottom:10px; width:100%;">
+          <button class="quick-btn" style="width:100%; justify-content:center; cursor:pointer; border:none;" onclick="createGoal()"><span class="dot"></span>Créer l'objectif</button>
+        </div>
+      </div>
+      <div id="autoRecordsContent"></div>
+      <div class="card fade-in">
+        <p class="eyebrow"><span class="dot"></span>Répartition du volume musculaire</p>
+        <select class="exo-select" id="muscleVolumePeriodSelect" onchange="setMuscleVolumePeriod(this.value)">
+          <option value="7">7 derniers jours</option>
+          <option value="30" selected>30 derniers jours</option>
+          <option value="90">90 derniers jours</option>
+        </select>
+        <div id="muscleVolumeContent" style="margin-top:16px;"></div>
+      </div>
+      <div class="card fade-in">
         <p class="eyebrow"><span class="dot"></span>Progression par exercice</p>
         <select class="exo-select" id="exoSelect" onchange="renderExoChart()"></select>
         <div class="chart-wrap" id="chartWrap"></div>
@@ -865,6 +961,43 @@ body{
   <div class="wrap" id="exerciseDetailContent"></div>
 </div>
 
+<div id="seanceDraftOverlay">
+  <div class="sd-topbar">
+    <button class="sd-icon-btn" onclick="closeSeanceDraft()" aria-label="Retour">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+  </div>
+  <div class="wrap" id="seanceDraftContent"></div>
+</div>
+
+<div id="searchOverlay">
+  <div class="sd-topbar">
+    <button class="sd-icon-btn" onclick="closeSearch()" aria-label="Fermer la recherche">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+  </div>
+  <div class="wrap">
+    <input type="text" id="searchInput" class="seance-filter-date" placeholder="Rechercher séances, exercices, repas, bilans…" oninput="runSearch(this.value)" autocomplete="off">
+    <div id="searchResults" style="margin-top:16px;"></div>
+  </div>
+</div>
+
+<div id="notifOverlay">
+  <div class="sd-topbar">
+    <button class="sd-icon-btn" onclick="closeNotifPanel()" aria-label="Fermer les notifications">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+    <button class="quick-btn emerald" style="cursor:pointer; border:1px solid var(--hairline-strong); padding:8px 14px;" onclick="markAllNotifsRead()"><span class="dot"></span>Tout marquer lu</button>
+  </div>
+  <div class="wrap">
+    <div id="notifList"></div>
+  </div>
+</div>
+
+<button id="focusExitBtn" onclick="toggleFocusMode()" aria-label="Quitter le mode focus">
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M8 3v3a2 2 0 01-2 2H3M21 8h-3a2 2 0 01-2-2V3M3 16h3a2 2 0 012 2v3M16 21v-3a2 2 0 012-2h3"/></svg>
+</button>
+
 <div class="tabbar" id="tabbar" style="display:none;">
   <button class="tab-btn active" data-page="today" onclick="switchPage('today')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
@@ -906,6 +1039,12 @@ body{
   const hour = Number(new Intl.DateTimeFormat('fr-FR',{hour:'2-digit',hour12:false,timeZone:'Europe/Paris'}).format(new Date()));
   document.documentElement.setAttribute('data-theme', (hour>=7 && hour<19) ? 'light' : 'dark');
   document.documentElement.setAttribute('data-skin', 'flashy');
+})();
+(function restoreFocusMode(){
+  if(lsGet('focusMode', false)){
+    document.body.classList.add('focus-mode');
+    document.getElementById('focusBtn').classList.add('active');
+  }
 })();
 
 let LAST_DATA = null; // conservé en mémoire pour l'onglet Progression (pas de re-fetch au changement d'exercice)
@@ -981,7 +1120,7 @@ function addDays(dateStr, delta){
   const fmt = new Intl.DateTimeFormat('fr-CA', { year:'numeric', month:'2-digit', day:'2-digit' });
   return fmt.format(dt);
 }
-function num(v){ const n = Number(v); return isNaN(n) ? null : n; }
+function num(v){ if(v==='' || v===null || v===undefined) return null; const n = Number(v); return isNaN(n) ? null : n; }
 
 // ==================== Fondations partagées (v18) ====================
 // Persistance locale (préférences, brouillons, objectifs) — namespacée, jamais confondue avec les données Sheets.
@@ -1055,6 +1194,464 @@ function classifyExerciseMuscles(name){
 }
 const MUSCLE_GROUPS_ORDER = ['Pectoraux','Dos','Épaules','Bras','Jambes','Abdominaux','Cardio','Autre'];
 
+// --- Score de préparation : pondérations configurables (persistées localement), renormalisées à 1 ---
+const READINESS_DEFAULT_WEIGHTS = { recup: 0.58, sommeil: 0.32, strain: 0.10 };
+function getReadinessWeights(){
+  const w = lsGet('readinessWeights', READINESS_DEFAULT_WEIGHTS);
+  const sum = (w.recup||0) + (w.sommeil||0) + (w.strain||0);
+  if(!sum) return READINESS_DEFAULT_WEIGHTS;
+  return { recup: w.recup/sum, sommeil: w.sommeil/sum, strain: w.strain/sum };
+}
+function setReadinessWeights(recup, sommeil, strain){ lsSet('readinessWeights', { recup, sommeil, strain }); }
+
+function computeReadiness(whoopToday){
+  const w = getReadinessWeights();
+  const recup = whoopToday ? num(whoopToday['Récupération %']) : null;
+  const sommeil = whoopToday ? num(whoopToday['Sommeil Perf %']) : null;
+  const strain = whoopToday ? num(whoopToday['Strain Jour']) : null;
+  const comps = [];
+  if(recup!==null) comps.push({ label:'Récupération', raw:`${Math.round(recup)}%`, value: recup/100, weight:w.recup });
+  if(sommeil!==null) comps.push({ label:'Sommeil', raw:`${Math.round(sommeil)}%`, value: sommeil/100, weight:w.sommeil });
+  if(strain!==null){
+    const strainScore = Math.max(0, 100-strain*4);
+    comps.push({ label:'Récupération de charge', raw:`Strain ${strain}`, value: strainScore/100, weight:w.strain });
+  }
+  if(!comps.length) return null;
+  const usedWeightSum = comps.reduce((a,c)=>a+c.weight,0);
+  const score = Math.max(0, Math.min(100, Math.round(comps.reduce((a,c)=>a+c.value*c.weight,0) / usedWeightSum * 100)));
+  const confidence = comps.length===3 ? { label:'Confiance haute', color:'var(--emerald)' }
+    : comps.length===2 ? { label:'Confiance moyenne', color:'var(--gold)' }
+    : { label:'Confiance faible — données incomplètes', color:'var(--rust)' };
+  let state;
+  if(score<40) state = { label:'Récupération prioritaire', color:'var(--rust)' };
+  else if(score<70) state = { label:'Charge à ajuster', color:'var(--gold)' };
+  else if(score<85) state = { label:'Prêt à performer', color:'var(--emerald)' };
+  else state = { label:'Haute disponibilité', color:'var(--emerald)' };
+  return { score, comps, confidence, state };
+}
+
+function computeReadinessContext(whoop, health, today){
+  const hrvBaseline = rollingBaseline(whoop, 'VFC (HRV)', today, 30, true);
+  const rhrBaseline = rollingBaseline(whoop, 'FCR (RHR)', today, 30, true);
+  const wToday = whoop.find(w=>w['Date']===today);
+  const hrvToday = wToday ? num(wToday['VFC (HRV)']) : null;
+  const rhrToday = wToday ? num(wToday['FCR (RHR)']) : null;
+
+  const SLEEP_TARGET_MIN = 480;
+  let debt = 0, nights = 0;
+  for(let i=0;i<7;i++){
+    const d = addDays(today, -i);
+    const w = whoop.find(x=>x['Date']===d);
+    if(!w || w['Sommeil Profond']==='') continue;
+    const asleep = (num(w['Sommeil Profond'])||0)+(num(w['Sommeil REM'])||0)+(num(w['Sommeil Léger'])||0);
+    if(asleep>0){ nights++; debt += Math.max(0, SLEEP_TARGET_MIN-asleep); }
+  }
+  return {
+    hrv: (hrvToday!==null && hrvBaseline) ? { value:hrvToday, delta: hrvToday-hrvBaseline.avg } : null,
+    rhr: (rhrToday!==null && rhrBaseline) ? { value:rhrToday, delta: rhrToday-rhrBaseline.avg } : null,
+    sleepDebtMin: nights ? debt : null
+  };
+}
+
+function toggleReadinessConfig(){
+  const panel = document.getElementById('readinessConfigPanel');
+  const isOpen = panel.style.display === 'block';
+  if(isOpen){ panel.style.display = 'none'; return; }
+  const w = getReadinessWeights();
+  document.getElementById('rwRecup').value = Math.round(w.recup*100);
+  document.getElementById('rwSommeil').value = Math.round(w.sommeil*100);
+  document.getElementById('rwStrain').value = Math.round(w.strain*100);
+  panel.style.display = 'block';
+}
+function saveReadinessWeights(){
+  const recup = Number(document.getElementById('rwRecup').value)||0;
+  const sommeil = Number(document.getElementById('rwSommeil').value)||0;
+  const strain = Number(document.getElementById('rwStrain').value)||0;
+  setReadinessWeights(recup, sommeil, strain);
+  document.getElementById('readinessConfigPanel').style.display = 'none';
+  if(LAST_DATA) renderToday(LAST_DATA);
+}
+
+function renderReadinessCard(whoopToday, whoop, health, today){
+  const card = document.getElementById('readinessCard');
+  const result = computeReadiness(whoopToday);
+  if(!result){ card.style.display = 'none'; return; }
+  card.style.display = 'block';
+
+  const valEl = document.getElementById('readinessVal');
+  valEl.textContent = result.score;
+  valEl.style.color = result.state.color;
+  document.getElementById('readinessStateLabel').textContent = result.state.label;
+  document.getElementById('readinessStateLabel').style.color = result.state.color;
+  const confEl = document.getElementById('readinessConfidence');
+  confEl.textContent = result.confidence.label;
+  confEl.style.color = result.confidence.color;
+
+  document.getElementById('readinessBreakdown').innerHTML = result.comps.map(c=>`
+    <div>
+      <div class="score-item-head"><span class="si-label">${c.label}</span><span class="si-raw mono">${c.raw}</span></div>
+      <div class="progress-track"><div class="progress-fill" style="width:${Math.round(c.value*100)}%;"></div></div>
+    </div>`).join('');
+
+  const ctx = computeReadinessContext(whoop, health, today);
+  const chips = [];
+  if(ctx.hrv) chips.push(`<div class="ressenti-chip">HRV <b>${Math.round(ctx.hrv.value)}ms</b> (${ctx.hrv.delta>=0?'+':''}${ctx.hrv.delta.toFixed(0)} vs 30j)</div>`);
+  if(ctx.rhr) chips.push(`<div class="ressenti-chip">FC repos <b>${Math.round(ctx.rhr.value)}</b> (${ctx.rhr.delta>=0?'+':''}${ctx.rhr.delta.toFixed(0)} vs 30j)</div>`);
+  if(ctx.sleepDebtMin!==null && ctx.sleepDebtMin>0) chips.push(`<div class="ressenti-chip">Dette de sommeil 7j <b>${minToHM(ctx.sleepDebtMin)}</b></div>`);
+  document.getElementById('readinessContext').innerHTML = chips.join('');
+}
+
+// --- Coach du jour : prescription calculée localement à partir des règles définies, jamais inventée ---
+const COACH_TIER_CONFIG = {
+  repos: { type:'Repos ou mobilité légère', duree:[15,25], strain:[0,6], rpe:[0,3] },
+  technique: { type:'Technique / Zone 2', duree:[30,45], strain:[7,11], rpe:[4,6] },
+  normale: { type:'Séance normale', duree:[45,70], strain:[11,16], rpe:[6,8] },
+  inconnu: { type:'Données insuffisantes pour prescrire', duree:[null,null], strain:[null,null], rpe:[null,null] }
+};
+function computeCoachPrescription(data, today){
+  const whoop = data.whoop||[], seances = data.seances||[];
+  const w = whoop.find(x=>x['Date']===today);
+  const recup = w ? num(w['Récupération %']) : null;
+  const sommeil = w ? num(w['Sommeil Perf %']) : null;
+  const hrvBaseline = rollingBaseline(whoop, 'VFC (HRV)', today, 30, true);
+  const hrvToday = w ? num(w['VFC (HRV)']) : null;
+  const hrvLow = (hrvToday!==null && hrvBaseline && hrvBaseline.stddev>0) ? (hrvToday < hrvBaseline.avg - hrvBaseline.stddev) : false;
+
+  const reasons = [];
+  let tier;
+  if(recup===null){ tier = 'inconnu'; reasons.push('récupération du jour indisponible'); }
+  else if(recup < 35){ tier = 'repos'; reasons.push(`récupération basse (${Math.round(recup)}%)`); }
+  else if(recup <= 60){ tier = 'technique'; reasons.push(`récupération modérée (${Math.round(recup)}%)`); }
+  else if(sommeil!==null && sommeil>=70){ tier = 'normale'; reasons.push(`récupération haute (${Math.round(recup)}%) et sommeil correct (${Math.round(sommeil)}%)`); }
+  else { tier = 'technique'; reasons.push(`récupération haute (${Math.round(recup)}%) mais sommeil ${sommeil!==null?`insuffisant (${Math.round(sommeil)}%)`:'indisponible'}`); }
+
+  let volumeModifier = 1;
+  if(hrvLow){ volumeModifier = 0.7; reasons.push(`HRV nettement sous la baseline 30j (${Math.round(hrvToday)}ms vs ${Math.round(hrvBaseline.avg)}ms)`); }
+
+  const recentMuscles = new Set();
+  seances.forEach(s=>{
+    if(!s['Détail Exercices']) return;
+    const daysAgo = (new Date(today+'T00:00:00') - new Date(s['Date']+'T00:00:00')) / 86400000;
+    if(daysAgo>=0 && daysAgo<2){
+      const { exercises } = parseSeanceExercises(s['Détail Exercices']);
+      exercises.forEach(ex=> recentMuscles.add(classifyExerciseMuscles(ex.name).primary));
+    }
+  });
+
+  const cfg = COACH_TIER_CONFIG[tier];
+  const allMuscleFreq = {};
+  seances.forEach(s=>{
+    if(!s['Détail Exercices']) return;
+    const { exercises } = parseSeanceExercises(s['Détail Exercices']);
+    exercises.forEach(ex=>{
+      const g = classifyExerciseMuscles(ex.name).primary;
+      allMuscleFreq[g] = (allMuscleFreq[g]||0)+1;
+    });
+  });
+  const candidateGroups = Object.keys(allMuscleFreq).filter(g=>!recentMuscles.has(g) && g!=='Cardio' && g!=='Autre')
+    .sort((a,b)=>allMuscleFreq[b]-allMuscleFreq[a]);
+  const recommendedGroups = (tier==='repos' || tier==='inconnu') ? [] : candidateGroups.slice(0,2);
+
+  const exerciseFreq = {};
+  seances.forEach(s=>{
+    if(!s['Détail Exercices']) return;
+    const { exercises } = parseSeanceExercises(s['Détail Exercices']);
+    exercises.forEach(ex=>{
+      const g = classifyExerciseMuscles(ex.name).primary;
+      if(!recommendedGroups.includes(g)) return;
+      exerciseFreq[ex.name] = (exerciseFreq[ex.name]||0)+1;
+    });
+  });
+  const proposedExercises = Object.keys(exerciseFreq).sort((a,b)=>exerciseFreq[b]-exerciseFreq[a]).slice(0,5);
+
+  if(recentMuscles.size) reasons.push(`à éviter en charge lourde : ${[...recentMuscles].join(', ')} (entraînés il y a moins de 48h)`);
+
+  const dureeMin = cfg.duree[0]!==null ? Math.round(cfg.duree[0]*volumeModifier) : null;
+  const dureeMax = cfg.duree[1]!==null ? Math.round(cfg.duree[1]*volumeModifier) : null;
+
+  return {
+    type: cfg.type, dureeMin, dureeMax,
+    strainMin: cfg.strain[0], strainMax: cfg.strain[1],
+    rpeMin: cfg.rpe[0], rpeMax: cfg.rpe[1],
+    groupes: recommendedGroups, exercices: proposedExercises,
+    justification: reasons.join(' · '),
+    alternative: dureeMin!==null
+      ? `Version plus légère : ${Math.round(dureeMin*0.6)}-${Math.round(dureeMax*0.6)} min, RPE ≤ ${Math.max(2,(cfg.rpe[0]||2))}, mobilité et technique uniquement.`
+      : ''
+  };
+}
+
+let LAST_COACH_PRESCRIPTION = null;
+function renderCoachCard(data, today){
+  const card = document.getElementById('coachCard');
+  const p = computeCoachPrescription(data, today);
+  LAST_COACH_PRESCRIPTION = p;
+  card.style.display = 'block';
+  document.getElementById('coachType').textContent = p.type;
+  document.getElementById('coachDuree').textContent = p.dureeMin!==null ? `${p.dureeMin}-${p.dureeMax}` : '—';
+  document.getElementById('coachStrain').textContent = p.strainMin!==null ? `${p.strainMin}-${p.strainMax}` : '—';
+  document.getElementById('coachRpe').textContent = p.rpeMin!==null ? `${p.rpeMin}-${p.rpeMax}` : '—';
+  document.getElementById('coachGroupes').innerHTML = p.groupes.length
+    ? p.groupes.map(g=>`<div class="ressenti-chip"><b>${g}</b></div>`).join('')
+    : '<div class="empty">Aucun groupe spécifique recommandé</div>';
+  document.getElementById('coachJustification').textContent = p.justification;
+  document.getElementById('coachExercices').innerHTML = p.exercices.length
+    ? p.exercices.map(e=>`<div class="ressenti-chip">${e}</div>`).join('')
+    : '<div class="empty">Pas assez d\'historique pour proposer des exercices précis</div>';
+  document.getElementById('coachAlternative').textContent = p.alternative;
+}
+
+// --- Brouillon de séance local (jamais synchronisé avec le Sheet — écriture non disponible depuis cette app) ---
+function createSeanceDraft(){
+  const today = selectedDate;
+  let draft = lsGet('seanceDraft_'+today, null);
+  if(!draft){
+    const p = LAST_COACH_PRESCRIPTION;
+    draft = { date: today, type: p ? p.type : 'Séance', exercises: (p && p.exercices.length ? p.exercices : ['Nouvel exercice']).map(name=>({ name, sets:3, reps:'10', charge:'' })) };
+    lsSet('seanceDraft_'+today, draft);
+  }
+  openSeanceDraft(today);
+}
+function openSeanceDraft(dateStr){
+  const draft = lsGet('seanceDraft_'+dateStr, null);
+  if(!draft) return;
+  renderSeanceDraftContent(draft);
+  document.getElementById('seanceDraftOverlay').classList.add('open');
+  document.getElementById('seanceDraftOverlay').scrollTop = 0;
+}
+function closeSeanceDraft(){ document.getElementById('seanceDraftOverlay').classList.remove('open'); }
+function renderSeanceDraftContent(draft){
+  const rows = draft.exercises.map((ex,i)=>`
+    <div class="mini-meal">
+      <input class="seance-filter-date" style="margin-bottom:6px; width:100%;" value="${escAttr(ex.name)}" onchange="updateDraftField('${draft.date}',${i},'name',this.value)">
+      <div style="display:flex; gap:8px;">
+        <input type="number" class="seance-filter-date" placeholder="Séries" value="${ex.sets}" onchange="updateDraftField('${draft.date}',${i},'sets',this.value)">
+        <input class="seance-filter-date" placeholder="Reps" value="${escAttr(ex.reps)}" onchange="updateDraftField('${draft.date}',${i},'reps',this.value)">
+        <input class="seance-filter-date" placeholder="Kg" value="${escAttr(ex.charge)}" onchange="updateDraftField('${draft.date}',${i},'charge',this.value)">
+      </div>
+      <button class="seance-filter-clear" style="position:static; margin-top:6px; color:var(--rust);" onclick="removeDraftExercise('${draft.date}',${i})">Retirer cet exercice</button>
+    </div>`).join('');
+  document.getElementById('seanceDraftContent').innerHTML = `
+    <div class="card fade-in">
+      <p class="eyebrow"><span class="dot"></span>Brouillon — ${draft.type}</p>
+      <div class="poids-note">Enregistré uniquement sur cet appareil (pas de synchronisation avec le Sheet). Logge la séance réelle via tes Raccourcis iOS une fois terminée.</div>
+    </div>
+    <div class="card fade-in">
+      <p class="eyebrow"><span class="dot"></span>Exercices</p>
+      ${rows}
+      <button class="quick-btn emerald" style="width:100%; justify-content:center; margin-top:10px; cursor:pointer; border:1px solid var(--hairline-strong);" onclick="addDraftExercise('${draft.date}')"><span class="dot"></span>Ajouter un exercice</button>
+    </div>`;
+}
+function updateDraftField(dateStr, idx, field, value){
+  const draft = lsGet('seanceDraft_'+dateStr, null);
+  if(!draft) return;
+  draft.exercises[idx][field] = field==='sets' ? (Number(value)||0) : value;
+  lsSet('seanceDraft_'+dateStr, draft);
+}
+function addDraftExercise(dateStr){
+  const draft = lsGet('seanceDraft_'+dateStr, null);
+  if(!draft) return;
+  draft.exercises.push({ name:'Nouvel exercice', sets:3, reps:'10', charge:'' });
+  lsSet('seanceDraft_'+dateStr, draft);
+  renderSeanceDraftContent(draft);
+}
+function removeDraftExercise(dateStr, idx){
+  const draft = lsGet('seanceDraft_'+dateStr, null);
+  if(!draft) return;
+  draft.exercises.splice(idx,1);
+  lsSet('seanceDraft_'+dateStr, draft);
+  renderSeanceDraftContent(draft);
+}
+
+// --- Recherche globale : indexe tout ce qui est déjà chargé, rien n'est requêté à part ---
+let SEARCH_INDEX = [];
+function buildSearchIndex(data){
+  const index = [];
+  (data.seances||[]).forEach(s=>{
+    index.push({ category:'Séances', title: s['Type']||'Séance', subtitle: fmtDateLabel(s['Date']),
+      action: () => { switchPage('seances'); openSeanceDetail(s['Date']); } });
+    if(s['Détail Exercices']){
+      const { exercises } = parseSeanceExercises(s['Détail Exercices']);
+      exercises.forEach(ex=>{
+        index.push({ category:'Exercices', title: ex.name, subtitle: `Loggé le ${fmtDateLabel(s['Date'])}`,
+          action: () => { openExerciseDetail(ex.name); } });
+      });
+    }
+    if(s['PRs'] && String(s['PRs']).trim()){
+      String(s['PRs']).split('\n').filter(l=>l.trim()).forEach(line=>{
+        index.push({ category:'Records', title: line.replace(/^-\s*/,''), subtitle: fmtDateLabel(s['Date']),
+          action: () => { switchPage('seances'); openSeanceDetail(s['Date']); } });
+      });
+    }
+  });
+  (data.repas_log||[]).forEach(r=>{
+    index.push({ category:'Repas', title: `${r['Type Repas']||'Repas'} — ${r['Description']||''}`, subtitle: fmtDateLabel(r['Date']),
+      action: () => { jumpToDate(r['Date']); switchPage('today'); } });
+  });
+  (data.bilans||[]).forEach(b=>{
+    if(b['Bilan']) index.push({ category:'Bilans', title: String(b['Bilan']).slice(0,70), subtitle: fmtDateLabel(b['Date']),
+      action: () => { jumpToDate(b['Date']); switchPage('today'); } });
+  });
+  (data.whoop||[]).forEach(w=>{
+    if(w['Récupération %']!=='' && w['Récupération %']!==undefined){
+      index.push({ category:'Métriques', title: `Récupération ${Math.round(num(w['Récupération %']))}%`, subtitle: fmtDateLabel(w['Date']),
+        action: () => { jumpToDate(w['Date']); switchPage('today'); } });
+    }
+  });
+  SEARCH_INDEX = index;
+}
+function openSearch(){
+  document.getElementById('searchOverlay').classList.add('open');
+  const input = document.getElementById('searchInput');
+  input.value = '';
+  runSearch('');
+  setTimeout(()=>input.focus(), 50);
+}
+function closeSearch(){ document.getElementById('searchOverlay').classList.remove('open'); }
+function runSearchResult(idx){
+  const item = SEARCH_INDEX[idx];
+  if(!item) return;
+  closeSearch();
+  item.action();
+}
+function runSearch(query){
+  const resultsEl = document.getElementById('searchResults');
+  const q = normalizeSearchText(query.trim());
+  if(!q){ resultsEl.innerHTML = '<div class="empty">Tape pour chercher dans toutes tes séances, exercices, repas, bilans et métriques chargés.</div>'; return; }
+  const matches = [];
+  SEARCH_INDEX.forEach((item, idx)=>{
+    if(normalizeSearchText(item.title+' '+item.subtitle).includes(q)) matches.push({ item, idx });
+  });
+  if(!matches.length){ resultsEl.innerHTML = `<div class="empty">Aucun résultat pour "${escAttr(query)}".</div>`; return; }
+  const grouped = {};
+  matches.slice(0,80).forEach(({item,idx})=>{ (grouped[item.category]=grouped[item.category]||[]).push({item,idx}); });
+  resultsEl.innerHTML = Object.entries(grouped).map(([cat,items])=>`
+    <div class="jd-section-label">${cat}</div>
+    ${items.map(({item,idx})=>`<div class="journal-row" style="padding:10px 0;" onclick="runSearchResult(${idx})">
+      <div class="journal-body"><div class="journal-title">${item.title}</div><div class="journal-sub">${item.subtitle}</div></div>
+      <svg class="chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg>
+    </div>`).join('')}
+  `).join('');
+}
+document.addEventListener('keydown', e => {
+  if((e.metaKey||e.ctrlKey) && e.key.toLowerCase()==='k'){ e.preventDefault(); openSearch(); return; }
+  if(e.key==='Escape'){
+    if(document.getElementById('searchOverlay').classList.contains('open')){ closeSearch(); return; }
+    const notif = document.getElementById('notifOverlay');
+    if(notif && notif.classList.contains('open')){ closeNotifPanel(); return; }
+    if(document.getElementById('seanceDraftOverlay').classList.contains('open')){ closeSeanceDraft(); return; }
+    if(document.getElementById('exerciseDetailOverlay').classList.contains('open')){ closeExerciseDetail(); return; }
+    if(document.getElementById('seanceDetailOverlay').classList.contains('open')){ closeSeanceDetail(); return; }
+  }
+});
+
+// --- Notifications : calculées à chaque chargement à partir de règles réelles, état lu/non-lu local ---
+const NOTIF_TYPE_LABELS = { recuperation:'Récupération', coach:'Coach', objectif:'Objectifs', sync:'Synchronisation', signal:'Signaux santé' };
+function computeNotifications(data){
+  const today = todayStr();
+  const notifs = [];
+  const wToday = (data.whoop||[]).find(w=>w['Date']===today);
+
+  const readiness = computeReadiness(wToday);
+  if(readiness && readiness.score<40){
+    notifs.push({ id:`recup_${today}`, type:'recuperation', title:'Récupération basse',
+      message:`Score de préparation à ${readiness.score}/100 aujourd'hui — priorise le repos.`, action:()=>switchPage('today') });
+  }
+  const prescription = computeCoachPrescription(data, today);
+  if(prescription && prescription.type!==COACH_TIER_CONFIG.inconnu.type){
+    notifs.push({ id:`coach_${today}`, type:'coach', title:'Séance recommandée prête',
+      message:`${prescription.type} — consulte le coach du jour.`, action:()=>switchPage('today') });
+  }
+  getGoals().forEach(g=>{
+    const current = computeGoalCurrentValue(g, data);
+    const progress = computeGoalProgress(g, current);
+    if(progress!==null && progress>=90 && progress<100){
+      notifs.push({ id:`goal_${g.id}_near`, type:'objectif', title:'Objectif presque atteint',
+        message:`"${g.titre}" est à ${Math.round(progress)}% de son objectif.`, action:()=>switchPage('progression') });
+    }
+  });
+  if(wToday){
+    notifs.push({ id:`sync_${today}`, type:'sync', title:'Nouvelle donnée synchronisée',
+      message:'Les données Whoop du jour sont disponibles.', action:()=>switchPage('today') });
+  }
+  const { combinedAlert } = computeHealthSignals(data, today);
+  if(combinedAlert){
+    notifs.push({ id:`signal_${today}`, type:'signal', title:'Signaux santé combinés',
+      message:'Plusieurs métriques dévient de la baseline en même temps.', action:()=>switchPage('sante') });
+  }
+  const readState = lsGet('notifRead', {});
+  return notifs.map(n=>({ ...n, read: !!readState[n.id] }));
+}
+function markNotifRead(id){
+  const readState = lsGet('notifRead', {});
+  readState[id] = true;
+  lsSet('notifRead', readState);
+}
+function renderNotifBadge(){
+  if(!LAST_DATA) return;
+  const notifs = computeNotifications(LAST_DATA);
+  const unread = notifs.filter(n=>!n.read).length;
+  const btn = document.getElementById('notifBtn');
+  let badge = btn.querySelector('.notif-badge');
+  if(unread>0){
+    if(!badge){ badge = document.createElement('span'); badge.className='notif-badge'; btn.appendChild(badge); }
+    badge.textContent = unread>9?'9+':String(unread);
+  } else if(badge) badge.remove();
+}
+let NOTIF_FILTER = 'all';
+function openNotifPanel(){
+  document.getElementById('notifOverlay').classList.add('open');
+  renderNotifList();
+}
+function closeNotifPanel(){ document.getElementById('notifOverlay').classList.remove('open'); }
+function setNotifFilter(type){ NOTIF_FILTER = type; renderNotifList(); }
+function markAllNotifsRead(){
+  if(!LAST_DATA) return;
+  const notifs = computeNotifications(LAST_DATA);
+  const readState = lsGet('notifRead', {});
+  notifs.forEach(n=>readState[n.id]=true);
+  lsSet('notifRead', readState);
+  renderNotifList();
+  renderNotifBadge();
+}
+function openNotifAction(id){
+  if(!LAST_DATA) return;
+  const notifs = computeNotifications(LAST_DATA);
+  const n = notifs.find(x=>x.id===id);
+  if(!n) return;
+  markNotifRead(id);
+  closeNotifPanel();
+  n.action();
+  renderNotifBadge();
+}
+function renderNotifList(){
+  if(!LAST_DATA) return;
+  const notifs = computeNotifications(LAST_DATA).slice().sort((a,b)=> (a.read?1:0) - (b.read?1:0));
+  const filtered = NOTIF_FILTER==='all' ? notifs : notifs.filter(n=>n.type===NOTIF_FILTER);
+  const el = document.getElementById('notifList');
+  const types = [...new Set(notifs.map(n=>n.type))];
+  const filterHtml = `<div class="seance-filter-row" style="margin-bottom:14px;">
+    <select class="exo-select" onchange="setNotifFilter(this.value)">
+      <option value="all" ${NOTIF_FILTER==='all'?'selected':''}>Tous les types</option>
+      ${types.map(t=>`<option value="${t}" ${NOTIF_FILTER===t?'selected':''}>${NOTIF_TYPE_LABELS[t]||t}</option>`).join('')}
+    </select>
+  </div>`;
+  if(!filtered.length){ el.innerHTML = filterHtml + '<div class="empty">Aucune notification</div>'; return; }
+  el.innerHTML = filterHtml + filtered.map(n=>`
+    <div class="journal-row" style="padding:12px 0; ${n.read?'opacity:0.55;':''}" onclick="openNotifAction('${n.id}')">
+      <div class="journal-body"><div class="journal-title">${n.read?'':'🔵 '}${n.title}</div><div class="journal-sub">${n.message}</div></div>
+      <svg class="chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg>
+    </div>`).join('');
+}
+
+// --- Mode focus : masque la navigation pour une lecture sans distraction, préférence locale ---
+function toggleFocusMode(){
+  const isActive = document.body.classList.toggle('focus-mode');
+  document.getElementById('focusBtn').classList.toggle('active', isActive);
+  lsSet('focusMode', isActive);
+  window.scrollTo({top:0, behavior:'instant'});
+}
+
 function countUp(el, target, decimals){
   decimals = decimals || 0;
   const duration = 750; const t0 = performance.now();
@@ -1091,6 +1688,9 @@ const pullIndicator = document.getElementById('pullIndicator');
 document.addEventListener('touchstart', e => {
   if(document.getElementById('seanceDetailOverlay').classList.contains('open')) return;
   if(document.getElementById('exerciseDetailOverlay').classList.contains('open')) return;
+  if(document.getElementById('seanceDraftOverlay').classList.contains('open')) return;
+  if(document.getElementById('searchOverlay').classList.contains('open')) return;
+  if(document.getElementById('notifOverlay') && document.getElementById('notifOverlay').classList.contains('open')) return;
   if(window.scrollY===0) pullStartY = e.touches[0].clientY;
   swipeStartX = e.touches[0].clientX;
   swipeStartY = e.touches[0].clientY;
@@ -1098,6 +1698,9 @@ document.addEventListener('touchstart', e => {
 document.addEventListener('touchmove', e => {
   if(document.getElementById('seanceDetailOverlay').classList.contains('open')) return;
   if(document.getElementById('exerciseDetailOverlay').classList.contains('open')) return;
+  if(document.getElementById('seanceDraftOverlay').classList.contains('open')) return;
+  if(document.getElementById('searchOverlay').classList.contains('open')) return;
+  if(document.getElementById('notifOverlay') && document.getElementById('notifOverlay').classList.contains('open')) return;
   if(pullStartY===null) return;
   const dy = e.touches[0].clientY - pullStartY;
   if(dy>0 && window.scrollY===0){
@@ -1110,6 +1713,9 @@ document.addEventListener('touchmove', e => {
 document.addEventListener('touchend', e => {
   if(document.getElementById('seanceDetailOverlay').classList.contains('open')) return;
   if(document.getElementById('exerciseDetailOverlay').classList.contains('open')) return;
+  if(document.getElementById('seanceDraftOverlay').classList.contains('open')) return;
+  if(document.getElementById('searchOverlay').classList.contains('open')) return;
+  if(document.getElementById('notifOverlay') && document.getElementById('notifOverlay').classList.contains('open')) return;
   // Swipe horizontal → changer d'onglet
   if(swipeStartX!==null && e.changedTouches && e.changedTouches.length){
     const endX = e.changedTouches[0].clientX, endY = e.changedTouches[0].clientY;
@@ -1160,7 +1766,12 @@ async function load(isManual){
     renderMorning(data);
     renderHeaderExtras(data);
     renderProgressionSetup(data);
+    renderMuscleVolumeSection(data);
+    renderGoalsList(data);
+    document.getElementById('autoRecordsContent').innerHTML = renderAutoRecordsCard(data);
     renderReference(data);
+    buildSearchIndex(data);
+    renderNotifBadge();
     const now = new Intl.DateTimeFormat('fr-FR',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Paris'}).format(new Date());
     document.getElementById('syncLabel').textContent = `Mis à jour à ${now}`;
     document.getElementById('loadingState').style.display='none';
@@ -1194,6 +1805,8 @@ function renderToday(data){
   setRing('ringRecup', recup!==null ? recup : 0);
   setRing('ringStrain', strain!==null ? (strain/21)*100 : 0);
   setRing('ringSommeil', sommeil!==null ? sommeil : 0);
+
+  renderReadinessCard(whoopToday, whoop, health, today);
 
   // --- Deltas vs moyenne 30 jours (hors aujourd'hui) ---
   function avgExcludingToday(key){
@@ -1250,6 +1863,8 @@ function renderToday(data){
     document.getElementById('recoSub').textContent = raison.slice(0,90) + (raison.length>90?'…':'');
     document.getElementById('recoBadge').textContent = recoToday['Déficit Calorique Cible'] ? `−${recoToday['Déficit Calorique Cible']} kcal` : '';
   } else recoCard.style.display='none';
+
+  renderCoachCard(data, today);
 
   const seanceToday = seances.find(s=>s['Date']===today);
   const seanceContent = document.getElementById('seanceContent');
@@ -1368,14 +1983,8 @@ function renderHeaderExtras(data){
     line.textContent = `Dernière séance : ${last['Type']} · il y a ${daysAgo}j`;
   } else line.textContent = '';
 
-  // --- Streak (jours consécutifs avec repas loggés) ---
-  let streak = 0;
-  let checkDate = today;
-  if(!repasLog.some(r=>r['Date']===checkDate)) checkDate = addDays(today, -1);
-  while(repasLog.some(r=>r['Date']===checkDate)){
-    streak++;
-    checkDate = addDays(checkDate, -1);
-  }
+  // --- Streak (jours consécutifs avec au moins une action pertinente) ---
+  const streak = computeMomentumStreak(data);
   const badge = document.getElementById('streakBadge');
   if(streak>0){
     badge.style.display = 'flex';
@@ -1383,8 +1992,298 @@ function renderHeaderExtras(data){
   } else badge.style.display = 'none';
 }
 
+// --- Momentum : série active, régularité, position dans la saison (données réellement chargées, jamais un faux percentile) ---
+function isActiveDay(data, d){
+  const whoop = data.whoop||[], health = data.health||[], seances = data.seances||[], repasLog = data.repas_log||[];
+  return seances.some(s=>s['Date']===d) || repasLog.some(r=>r['Date']===d) || whoop.some(w=>w['Date']===d) || health.some(h=>h['Date']===d);
+}
+function computeMomentumStreak(data){
+  const today = todayStr();
+  let streak = 0, checkDate = today;
+  if(!isActiveDay(data, checkDate)) checkDate = addDays(checkDate, -1);
+  while(isActiveDay(data, checkDate)){ streak++; checkDate = addDays(checkDate, -1); }
+  return streak;
+}
+function computeRegularity(data, windowDays, offsetDays){
+  const today = todayStr();
+  let activeCount = 0;
+  for(let i=0;i<windowDays;i++){
+    if(isActiveDay(data, addDays(today, -offsetDays-i))) activeCount++;
+  }
+  return (activeCount/windowDays)*100;
+}
+function getWeekBlocks(data){
+  const today = todayStr();
+  const allDates = [...(data.whoop||[]).map(w=>w['Date']), ...(data.seances||[]).map(s=>s['Date']), ...(data.repas_log||[]).map(r=>r['Date'])];
+  if(!allDates.length) return [];
+  const minDate = allDates.slice().sort()[0];
+  const totalDays = Math.floor((new Date(today+'T00:00:00') - new Date(minDate+'T00:00:00'))/86400000) + 1;
+  const nWeeks = Math.max(1, Math.floor(totalDays/7));
+  const blocks = [];
+  for(let w=0; w<nWeeks; w++){
+    const end = addDays(today, -7*w);
+    blocks.push({ start: addDays(end,-6), end });
+  }
+  return blocks;
+}
+// Indice composite volontairement limité à 3 axes bien définis (constance, récupération, sommeil) — "progression"
+// et "charge maîtrisée" n'ont pas de formule non ambiguë sans base arbitraire, on préfère ne pas les inventer.
+function computeWeekScore(data, start, end){
+  const whoop = (data.whoop||[]).filter(w=>w['Date']>=start && w['Date']<=end);
+  const seances = (data.seances||[]).filter(s=>s['Date']>=start && s['Date']<=end);
+  const repasLog = (data.repas_log||[]).filter(r=>r['Date']>=start && r['Date']<=end);
+  const activeDays = new Set([...whoop.map(w=>w['Date']), ...seances.map(s=>s['Date']), ...repasLog.map(r=>r['Date'])]).size;
+  const comps = [Math.min(1, activeDays/7)];
+  const recupVals = whoop.map(w=>num(w['Récupération %'])).filter(v=>v!==null);
+  if(recupVals.length) comps.push(recupVals.reduce((a,b)=>a+b,0)/recupVals.length/100);
+  const sommeilVals = whoop.map(w=>num(w['Sommeil Perf %'])).filter(v=>v!==null);
+  if(sommeilVals.length) comps.push(sommeilVals.reduce((a,b)=>a+b,0)/sommeilVals.length/100);
+  return { score: comps.reduce((a,b)=>a+b,0)/comps.length, activeDays, seances: seances.length };
+}
+function computeMomentum(data){
+  const streak = computeMomentumStreak(data);
+  const regCurrent = computeRegularity(data, 28, 0);
+  const regPrevious = computeRegularity(data, 28, 28);
+  const blocks = getWeekBlocks(data);
+  const scored = blocks.map(b=>({ ...b, ...computeWeekScore(data,b.start,b.end) }));
+  const sorted = scored.slice().sort((a,b)=>b.score-a.score);
+  const currentWeek = scored[0] || null;
+  const rank = currentWeek ? sorted.findIndex(w=>w.start===currentWeek.start) + 1 : null;
+  return { streak, regCurrent, regPrevious, weekRank: rank, weekTotal: scored.length, currentWeek };
+}
+function ordinalFr(n){ return n===1 ? '1re' : `${n}e`; }
+function renderMomentumCard(data){
+  const m = computeMomentum(data);
+  const regDelta = m.regPrevious>0 ? m.regCurrent-m.regPrevious : null;
+  const rankText = m.currentWeek ? `${ordinalFr(m.weekRank)} meilleure semaine sur ${m.weekTotal} chargée${m.weekTotal>1?'s':''}` : 'Pas assez de données';
+  return `<div class="card fade-in">
+    <p class="eyebrow"><span class="dot"></span>Momentum</p>
+    <div class="week-summary-grid" style="grid-template-columns:repeat(3,1fr);">
+      <div class="wsum"><div class="wsum-val serif">${m.streak}</div><div class="wsum-label">Série active</div></div>
+      <div class="wsum"><div class="wsum-val serif">${Math.round(m.regCurrent)}%</div><div class="wsum-label">Régularité 28j</div></div>
+      <div class="wsum"><div class="wsum-val serif">${m.weekRank||'—'}<span style="font-size:14px;">/${m.weekTotal}</span></div><div class="wsum-label">Rang semaine</div></div>
+    </div>
+    <div class="poids-note" style="margin-top:10px;">
+      ${regDelta!==null ? `Régularité ${regDelta>=0?'+':''}${regDelta.toFixed(0)} pts vs 28j précédents. ` : ''}${rankText} (constance, récupération, sommeil).
+    </div>
+  </div>`;
+}
+
+// --- Comparaison hebdomadaire (semaine glissante courante vs précédente, même convention que l'onglet Semaine) ---
+const WEEK_COMPARISON_METRICS = [
+  { key:'charge', label:'Charge totale (strain cumulé)', higherIsBetter:null, decimals:1 },
+  { key:'recup', label:'Récupération moyenne', higherIsBetter:true, decimals:0, unit:'%' },
+  { key:'sommeil', label:'Sommeil moyen', higherIsBetter:true, decimals:0, unit:'%' },
+  { key:'hrv', label:'HRV moyenne', higherIsBetter:true, decimals:0, unit:'ms' },
+  { key:'seances', label:'Séances', higherIsBetter:null, decimals:0 },
+  { key:'calories', label:'Calories consommées', higherIsBetter:null, decimals:0 },
+  { key:'balance', label:'Balance énergétique cumulée', higherIsBetter:null, decimals:0 },
+  { key:'regularite', label:'Régularité', higherIsBetter:true, decimals:0, unit:'%' }
+];
+function computeWeekMetrics(data, offsetDays){
+  const dates7 = Array.from({length:7}, (_,i)=> addDays(todayStr(), -offsetDays-6+i));
+  const whoop = (data.whoop||[]).filter(w=>dates7.includes(w['Date']));
+  const seances = (data.seances||[]).filter(s=>dates7.includes(s['Date']));
+  const mealsWeek = (data.repas_log||[]).filter(r=>dates7.includes(r['Date']));
+  const avg = (arr,key) => { const v = arr.map(x=>num(x[key])).filter(x=>x!==null); return v.length? v.reduce((a,b)=>a+b,0)/v.length : null; };
+  const totalDep = whoop.reduce((a,w)=>a+(num(w['Calories Jour'])||0),0);
+  const totalMange = mealsWeek.reduce((a,r)=>a+(num(r['Calories'])||0),0);
+  return {
+    charge: whoop.length ? whoop.reduce((a,w)=>a+(num(w['Strain Jour'])||0),0) : null,
+    recup: avg(whoop,'Récupération %'), sommeil: avg(whoop,'Sommeil Perf %'), hrv: avg(whoop,'VFC (HRV)'),
+    seances: seances.length,
+    calories: mealsWeek.length ? totalMange : null,
+    balance: (totalDep && mealsWeek.length) ? totalDep-totalMange : null,
+    regularite: computeRegularity(data,7,offsetDays)
+  };
+}
+function renderWeekComparisonCard(data){
+  const current = computeWeekMetrics(data, 0);
+  const previous = computeWeekMetrics(data, 7);
+  const rows = WEEK_COMPARISON_METRICS.map(m=>{
+    const cur = current[m.key], prev = previous[m.key];
+    if(cur===null) return `<div class="meas-row"><span class="meas-label">${m.label}</span><span class="meas-value">—</span></div>`;
+    const curTxt = Number.isInteger(cur) ? cur : cur.toFixed(m.decimals);
+    let deltaHtml = '';
+    if(prev!==null && prev!==0){
+      const delta = cur-prev, pct = (delta/Math.abs(prev))*100;
+      const color = m.higherIsBetter===null ? 'var(--text-faint)' : ((delta>=0)===m.higherIsBetter ? 'var(--emerald)' : 'var(--rust)');
+      deltaHtml = ` <span style="color:${color}; font-size:11px;">${delta>=0?'+':''}${delta.toFixed(1)} · ${pct>=0?'+':''}${pct.toFixed(0)}%</span>`;
+    }
+    return `<div class="meas-row"><span class="meas-label">${m.label}</span><span class="meas-value mono">${curTxt}${m.unit||''}${deltaHtml}</span></div>`;
+  }).join('');
+  return `<div class="card fade-in"><p class="eyebrow"><span class="dot"></span>Comparaison vs semaine précédente</p>${rows}</div>`;
+}
+
+function showWeekDayDetail(dateStr){
+  if(!LAST_DATA) return;
+  const whoop = LAST_DATA.whoop||[], seances = LAST_DATA.seances||[], repasLog = LAST_DATA.repas_log||[];
+  const w = whoop.find(x=>x['Date']===dateStr);
+  const s = seances.find(x=>x['Date']===dateStr);
+  const meals = repasLog.filter(r=>r['Date']===dateStr);
+  const totalCal = meals.reduce((a,m)=>a+(num(m['Calories'])||0),0);
+  let comment = 'Journée calme';
+  if(s && w && num(w['Strain Jour'])!==null && num(w['Strain Jour'])>=14) comment = 'Journée à forte charge';
+  else if(s) comment = 'Séance loggée';
+  else if(!w && !meals.length) comment = 'Aucune donnée';
+  document.getElementById('weekDayDetail').innerHTML = `
+    <div class="poids-note" style="margin-top:12px; padding-top:12px; border-top:1px solid var(--hairline);">
+      <b style="color:var(--text);">${fmtDateLabel(dateStr)}</b> — ${comment}<br>
+      Strain ${w && w['Strain Jour']!==''?w['Strain Jour']:'—'} · Séance ${s?s['Type']:'aucune'} · Récup. ${w && w['Récupération %']!==''?Math.round(w['Récupération %'])+'%':'—'} · ${meals.length?Math.round(totalCal)+' kcal mangées':'aucun repas loggé'}
+    </div>`;
+}
+
 // --- Parsing du détail d'exercices : "- Nom : NxR1/R2/... reps, charges C1kg/C2kg/..., total Tkg" ---
 // (ou variante durée pour les exercices chronométrés : "- Nom : Nx1:00, charges 0kg/..., total 0kg")
+// --- Objectifs (CRUD local) : progression et echeance auto-calculees a partir des donnees reelles ---
+function getGoals(){ return lsGet('goals', []); }
+function saveGoals(goals){ lsSet('goals', goals); }
+function computeGoalCurrentValue(goal, data){
+  if(!data) return goal.valeur_actuelle!=null ? goal.valeur_actuelle : null;
+  if(goal.categorie==='poids'){
+    const health = (data.health||[]).filter(h=>h['Poids']!=='' && h['Poids']!==undefined);
+    return health.length ? num(health[health.length-1]['Poids']) : null;
+  }
+  if(goal.categorie==='exercice'){
+    const profile = buildExerciseProfile(data, goal.metric);
+    return profile ? profile.bestChargeEver : null;
+  }
+  if(goal.categorie==='mesure'){
+    const health = (data.health||[]).filter(h=>h[goal.metric]!=='' && h[goal.metric]!==undefined);
+    return health.length ? num(health[health.length-1][goal.metric]) : null;
+  }
+  return goal.valeur_actuelle!=null ? goal.valeur_actuelle : null;
+}
+function computeGoalProgress(goal, currentVal){
+  if(currentVal===null || goal.valeur_cible===goal.valeur_initiale) return null;
+  const pct = ((currentVal-goal.valeur_initiale)/(goal.valeur_cible-goal.valeur_initiale))*100;
+  return Math.max(0, Math.min(100, pct));
+}
+function computeGoalETA(goal, currentVal){
+  if(currentVal===null || !goal.created_at) return null;
+  const daysElapsed = Math.max(1, Math.floor((new Date(todayStr()+'T00:00:00') - new Date(goal.created_at+'T00:00:00'))/86400000));
+  const rate = (currentVal - goal.valeur_initiale) / daysElapsed;
+  if(rate===0) return null;
+  const remaining = goal.valeur_cible - currentVal;
+  if(remaining===0) return { date: todayStr(), atteint:true };
+  if((remaining>0) !== (rate>0)) return null;
+  const daysNeeded = Math.round(remaining/rate);
+  return { date: addDays(todayStr(), daysNeeded), atteint:false };
+}
+function toggleGoalForm(){
+  const panel = document.getElementById('goalFormPanel');
+  const isOpen = panel.style.display==='block';
+  if(isOpen){ panel.style.display='none'; return; }
+  onGoalCategorieChange();
+  panel.style.display='block';
+}
+function onGoalCategorieChange(){
+  const cat = document.getElementById('goalCategorie').value;
+  const metricSelect = document.getElementById('goalMetric');
+  if(cat==='exercice'){
+    const names = Object.keys(window.EXO_INDEX||{});
+    metricSelect.innerHTML = names.map(n=>`<option value="${escAttr(n)}">${n}</option>`).join('');
+    metricSelect.style.display = 'block';
+  } else if(cat==='mesure'){
+    const fields = ['IMC','IMG','Tour de taille','Poids sans graisse','Graisse corporelle','Graisse viscérale','Graisse sous-cutanée'];
+    metricSelect.innerHTML = fields.map(f=>`<option value="${f}">${f}</option>`).join('');
+    metricSelect.style.display = 'block';
+  } else {
+    metricSelect.style.display = 'none';
+  }
+}
+function createGoal(){
+  const titre = document.getElementById('goalTitre').value.trim();
+  const categorie = document.getElementById('goalCategorie').value;
+  const metric = document.getElementById('goalMetric').style.display!=='none' ? document.getElementById('goalMetric').value : null;
+  const cible = Number(document.getElementById('goalCible').value);
+  const unite = document.getElementById('goalUnite').value.trim();
+  const dateCible = document.getElementById('goalDateCible').value || null;
+  if(!titre || isNaN(cible)) return;
+  const initVal = computeGoalCurrentValue({ categorie, metric }, LAST_DATA);
+  const goal = {
+    id: 'g'+Date.now(), categorie, metric, titre,
+    valeur_initiale: initVal!==null?initVal:0, valeur_actuelle: initVal!==null?initVal:0,
+    valeur_cible: cible, unite, date_cible: dateCible, statut:'actif', created_at: todayStr()
+  };
+  const goals = getGoals();
+  goals.push(goal);
+  saveGoals(goals);
+  document.getElementById('goalFormPanel').style.display='none';
+  document.getElementById('goalTitre').value=''; document.getElementById('goalCible').value=''; document.getElementById('goalUnite').value='';
+  renderGoalsList(LAST_DATA);
+}
+function deleteGoal(id){
+  saveGoals(getGoals().filter(g=>g.id!==id));
+  renderGoalsList(LAST_DATA);
+}
+function renderGoalsList(data){
+  const goals = getGoals();
+  const el = document.getElementById('goalsList');
+  if(!el) return;
+  if(!goals.length){ el.innerHTML = '<div class="empty">Aucun objectif pour l\'instant</div>'; return; }
+  el.innerHTML = goals.map(g=>{
+    const current = computeGoalCurrentValue(g, data);
+    const progress = computeGoalProgress(g, current);
+    const eta = computeGoalETA(g, current);
+    const statut = progress!==null && progress>=100 ? 'Atteint' : 'Actif';
+    return `<div class="seance-mini-card" style="margin-bottom:10px; cursor:default;">
+      <div class="seance-mini-head">
+        <div><div class="seance-mini-name">${g.titre}</div><div class="seance-mini-stats">${current!==null?current:'—'}${g.unite||''} / ${g.valeur_cible}${g.unite||''} · ${statut}</div></div>
+        <button class="seance-filter-clear" style="position:static; color:var(--rust);" onclick="deleteGoal('${g.id}')" aria-label="Supprimer l'objectif">✕</button>
+      </div>
+      <div class="progress-track" style="margin-top:8px;"><div class="progress-fill${progress!==null&&progress>=100?' done':''}" style="width:${progress!==null?progress:0}%;"></div></div>
+      <div class="poids-note" style="margin-top:6px;">${eta ? (eta.atteint?'Objectif déjà atteint au rythme actuel':'Estimation : atteint vers le '+fmtDateLabel(eta.date)) : "Pas assez d'historique pour estimer une date"}</div>
+    </div>`;
+  }).join('');
+}
+
+// --- Records auto-detectes (charge max, volume max, meilleure serie, plus longue serie active) ---
+function computeLongestStreak(data){
+  const allDates = new Set([...(data.whoop||[]).map(w=>w['Date']), ...(data.seances||[]).map(s=>s['Date']), ...(data.repas_log||[]).map(r=>r['Date']), ...(data.health||[]).map(h=>h['Date'])]);
+  if(!allDates.size) return 0;
+  const sorted = [...allDates].sort();
+  let longest=1, current=1;
+  for(let i=1;i<sorted.length;i++){
+    if(addDays(sorted[i-1],1)===sorted[i]){ current++; longest=Math.max(longest,current); } else current=1;
+  }
+  return longest;
+}
+function computeAutoRecords(data){
+  const seances = data.seances||[];
+  let maxCharge=null, maxChargeExo=null, maxChargeDate=null;
+  let maxSessionTonnage=null, maxSessionDate=null, maxSessionType=null;
+  let maxSetVolume=null, maxSetExo=null, maxSetDate=null;
+  seances.forEach(s=>{
+    const tonnage = num(s['Tonnage Total']);
+    if(tonnage!==null && (maxSessionTonnage===null || tonnage>maxSessionTonnage)){ maxSessionTonnage=tonnage; maxSessionDate=s['Date']; maxSessionType=s['Type']; }
+    if(!s['Détail Exercices']) return;
+    const { exercises } = parseSeanceExercises(s['Détail Exercices']);
+    exercises.forEach(ex=>{
+      ex.sets.forEach(st=>{
+        if(st.charge===null) return;
+        if(maxCharge===null || st.charge>maxCharge){ maxCharge=st.charge; maxChargeExo=ex.name; maxChargeDate=s['Date']; }
+        const reps = ex.isDuration ? 0 : (num(st.reps)||0);
+        const setVol = st.charge*reps;
+        if(setVol>0 && (maxSetVolume===null || setVol>maxSetVolume)){ maxSetVolume=setVol; maxSetExo=ex.name; maxSetDate=s['Date']; }
+      });
+    });
+  });
+  return { maxCharge, maxChargeExo, maxChargeDate, maxSessionTonnage, maxSessionDate, maxSessionType, maxSetVolume, maxSetExo, maxSetDate, longestStreak: computeLongestStreak(data) };
+}
+function renderAutoRecordsCard(data){
+  const r = computeAutoRecords(data);
+  if(r.maxCharge===null && r.maxSessionTonnage===null){
+    return `<div class="card fade-in"><p class="eyebrow"><span class="dot"></span>Records automatiques</p><div class="empty">Pas assez de données pour détecter des records</div></div>`;
+  }
+  const chips = [];
+  if(r.maxCharge!==null) chips.push(`<div class="pr-chip"><span class="pr-medal">🏋️</span><div class="pr-text"><b>Charge max</b><br>${r.maxChargeExo} — ${r.maxCharge}kg (${fmtDateLabel(r.maxChargeDate)})</div></div>`);
+  if(r.maxSessionTonnage!==null) chips.push(`<div class="pr-chip"><span class="pr-medal">📦</span><div class="pr-text"><b>Volume max (séance)</b><br>${r.maxSessionType||'Séance'} — ${Math.round(r.maxSessionTonnage)}kg (${fmtDateLabel(r.maxSessionDate)})</div></div>`);
+  if(r.maxSetVolume!==null) chips.push(`<div class="pr-chip"><span class="pr-medal">💪</span><div class="pr-text"><b>Meilleure série</b><br>${r.maxSetExo} (${fmtDateLabel(r.maxSetDate)})</div></div>`);
+  chips.push(`<div class="pr-chip"><span class="pr-medal">🔥</span><div class="pr-text"><b>Plus longue série active</b><br>${r.longestStreak} jour${r.longestStreak>1?'s':''}</div></div>`);
+  return `<div class="card fade-in"><p class="eyebrow"><span class="dot"></span>Records automatiques</p><div class="pr-list">${chips.join('')}</div></div>`;
+}
+
 function parseFrenchNum(s){
   const n = parseFloat(String(s).replace(',', '.'));
   return isNaN(n) ? null : n;
@@ -1639,6 +2538,100 @@ function categorizeExercise(name){
   if(/plank|planche|crunch|abdo|twist|deadbug|sit up/.test(n)) return 'Abdos & Core';
   if(/jump rope|corde.{0,3}sauter|^rowing$|bike erg|jumping jack|marche/.test(n)) return 'Cardio';
   return 'Autre';
+}
+
+// --- Répartition du volume musculaire : groupe principal coeff 1, secondaire coeff configurable ---
+const MUSCLE_SECONDARY_COEF = 0.3; // pondération volontairement faible : les bras/épaules sont synergistes de presque
+// tout mouvement de poussée/tirage — un coefficient trop élevé les ferait dominer artificiellement le classement
+function computeMuscleVolume(seances, startDate, endDate){
+  const result = {};
+  (seances||[]).forEach(s=>{
+    if(s['Date'] < startDate || s['Date'] > endDate) return;
+    if(!s['Détail Exercices']) return;
+    const { exercises } = parseSeanceExercises(s['Détail Exercices']);
+    exercises.forEach(ex=>{
+      const { primary, secondary } = classifyExerciseMuscles(ex.name);
+      let exVolume = 0, exSets = 0;
+      ex.sets.forEach(st=>{
+        const reps = ex.isDuration ? 1 : (num(st.reps)||0);
+        exVolume += (st.charge||0) * reps;
+        exSets += 1;
+      });
+      const addTo = (group, coef) => {
+        if(!result[group]) result[group] = { volume:0, sets:0, exercises:{} };
+        result[group].volume += exVolume*coef;
+        result[group].sets += exSets*coef;
+        result[group].exercises[ex.name] = (result[group].exercises[ex.name]||0) + exVolume*coef;
+      };
+      addTo(primary, 1);
+      secondary.forEach(g=>addTo(g, MUSCLE_SECONDARY_COEF));
+    });
+  });
+  return result;
+}
+
+let muscleVolumePeriod = lsGet('muscleVolumePeriod', 30);
+function setMuscleVolumePeriod(days){
+  muscleVolumePeriod = Number(days);
+  lsSet('muscleVolumePeriod', muscleVolumePeriod);
+  if(LAST_DATA) renderMuscleVolumeSection(LAST_DATA);
+}
+function toggleMuscleDetail(group){
+  const card = document.getElementById('mv-card-'+group);
+  const detail = document.getElementById('mv-detail-'+group);
+  const isOpen = card.classList.contains('open');
+  if(isOpen){ card.classList.remove('open'); detail.style.maxHeight = null; }
+  else{ card.classList.add('open'); detail.style.maxHeight = detail.scrollHeight + 'px'; }
+}
+function renderMuscleVolumeSection(data){
+  document.getElementById('muscleVolumePeriodSelect').value = String(muscleVolumePeriod);
+  const container = document.getElementById('muscleVolumeContent');
+  const today = todayStr();
+  const days = muscleVolumePeriod;
+  const start = addDays(today, -days+1);
+  const prevEnd = addDays(start, -1);
+  const prevStart = addDays(prevEnd, -days+1);
+  const current = computeMuscleVolume(data.seances, start, today);
+  const previous = computeMuscleVolume(data.seances, prevStart, prevEnd);
+
+  const groups = Object.keys(current).filter(g=>current[g].volume>0);
+  const totalVol = groups.reduce((a,g)=>a+current[g].volume,0);
+  if(!totalVol){ container.innerHTML = '<div class="empty">Aucune séance avec charges sur cette période</div>'; return; }
+
+  const sorted = groups.sort((a,b)=>current[b].volume-current[a].volume);
+  const rows = sorted.map(g=>{
+    const pct = (current[g].volume/totalVol*100);
+    const prevVol = previous[g] ? previous[g].volume : 0;
+    const deltaPct = prevVol>0 ? ((current[g].volume-prevVol)/prevVol*100) : null;
+    const exList = Object.entries(current[g].exercises).sort((a,b)=>b[1]-a[1])
+      .map(([exName,vol])=>`<div class="mini-meal"><div class="mm-type">${exName}</div><div class="mm-macros">${Math.round(vol)} kg</div></div>`).join('');
+    return `
+      <div class="seance-mini-card" id="mv-card-${g}" onclick="toggleMuscleDetail('${g}')">
+        <div class="seance-mini-head">
+          <div><div class="seance-mini-name">${g}</div><div class="seance-mini-stats">${Math.round(current[g].volume)} kg · ${pct.toFixed(0)}%${deltaPct!==null?` · ${deltaPct>=0?'+':''}${deltaPct.toFixed(0)}% vs période préc.`:''}</div></div>
+          <svg class="chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+        </div>
+        <div class="progress-track" style="margin-top:8px;"><div class="progress-fill" style="width:${pct}%;"></div></div>
+        <div class="exo-detail" id="mv-detail-${g}"><div class="exo-detail-inner" style="font-family:'Space Grotesk',sans-serif; white-space:normal;">${exList}</div></div>
+      </div>`;
+  }).join('');
+
+  const pushVol = (current['Pectoraux']?current['Pectoraux'].volume:0) + (current['Épaules']?current['Épaules'].volume:0);
+  const pullVol = (current['Dos']?current['Dos'].volume:0) + (current['Bras']?current['Bras'].volume:0);
+  let alertHtml = '';
+  if(pushVol>0 && pullVol>0){
+    const ratio = pushVol/pullVol;
+    if(ratio > 1.4 || ratio < 0.7){
+      const dominant = ratio>1.4 ? 'push (pectoraux/épaules)' : 'tirage (dos/bras)';
+      const lacking = ratio>1.4 ? 'tirage (dos/bras)' : 'push (pectoraux/épaules)';
+      alertHtml = `<div class="risk-banner" style="margin-top:14px;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 9v4M12 17h.01M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg>
+        <div><div class="risk-banner-title">Déséquilibre push / tirage</div><div class="risk-banner-text">Le volume ${dominant} domine nettement sur cette période. Pense à rééquilibrer avec plus de ${lacking}.</div></div>
+      </div>`;
+    }
+  }
+
+  container.innerHTML = `<div class="pr-list" style="gap:10px;">${rows}</div>${alertHtml}`;
 }
 
 function renderProgressionSetup(data){
@@ -2063,6 +3056,10 @@ function renderWeek(data){
   const dates7 = Array.from({length:7}, (_,i) => todayStr(-6+i));
   const whoop = data.whoop||[], repasLog = data.repas_log||[], seances = data.seances||[], health = data.health||[];
 
+  document.getElementById('momentumContent').innerHTML = renderMomentumCard(data);
+  document.getElementById('weekComparisonContent').innerHTML = renderWeekComparisonCard(data);
+  document.getElementById('weekDayDetail').innerHTML = '';
+
   const seancesThisWeek = seances.filter(s => dates7.includes(s['Date']));
   document.getElementById('wSeances').textContent = seancesThisWeek.length;
 
@@ -2093,7 +3090,7 @@ function renderWeek(data){
     const dh = d.dep ? Math.max(4,(d.dep/maxVal)*90) : 4;
     const mh = d.mange ? Math.max(4,(d.mange/maxVal)*90) : 4;
     const lbl = new Intl.DateTimeFormat('fr-FR',{weekday:'narrow'}).format(new Date(d.date+'T00:00:00'));
-    return `<div class="day-col"><div class="bars"><div class="bar spent" style="height:${dh}px"></div><div class="bar eaten" style="height:${mh}px"></div></div><div class="day-label">${lbl}</div></div>`;
+    return `<div class="day-col" style="cursor:pointer;" onclick="showWeekDayDetail('${d.date}')"><div class="bars"><div class="bar spent" style="height:${dh}px"></div><div class="bar eaten" style="height:${mh}px"></div></div><div class="day-label">${lbl}</div></div>`;
   }).join('');
 
   const prList = document.getElementById('prList');
@@ -2577,6 +3574,164 @@ function healthChartCard(label, source, values, colorHex, decimals, unit){
   </div>`;
 }
 
+// --- Corrélation sommeil / performance : Pearson réel, jamais présenté comme causalité ---
+const CORR_MIN_N = 14;
+const CORR_METRICS = {
+  x: { sleepDuration:'Durée de sommeil (h)', sleepPerf:'Performance sommeil (%)', recup:'Récupération (%)' },
+  y: { strain:'Strain séance', tonnage:'Tonnage (kg)', difficulte:'Difficulté (RPE, /10)' }
+};
+let corrXMetric = lsGet('corrXMetric', 'sleepPerf');
+let corrYMetric = lsGet('corrYMetric', 'strain');
+
+function buildCorrelationPairs(data, xKey, yKey){
+  const whoop = data.whoop||[], seances = data.seances||[];
+  const dates = new Set([...whoop.map(w=>w['Date']), ...seances.map(s=>s['Date'])]);
+  const pairs = [];
+  [...dates].sort().forEach(d=>{
+    const w = whoop.find(x=>x['Date']===d);
+    const s = seances.find(x=>x['Date']===d);
+    let xVal=null, yVal=null;
+    if(xKey==='sleepDuration' && w){
+      const mins = (num(w['Sommeil Profond'])||0)+(num(w['Sommeil REM'])||0)+(num(w['Sommeil Léger'])||0);
+      xVal = mins>0 ? mins/60 : null;
+    } else if(xKey==='sleepPerf' && w) xVal = num(w['Sommeil Perf %']);
+    else if(xKey==='recup' && w) xVal = num(w['Récupération %']);
+    if(yKey==='strain' && s) yVal = num(s['Strain Séance']);
+    else if(yKey==='tonnage' && s) yVal = num(s['Tonnage Total']);
+    else if(yKey==='difficulte' && s) yVal = num(s['Difficulté']);
+    if(xVal!==null && yVal!==null) pairs.push({ date:d, x:xVal, y:yVal });
+  });
+  return pairs;
+}
+
+function pearsonCI95(r, n){
+  if(n<4) return null;
+  const rc = Math.max(-0.9999, Math.min(0.9999, r));
+  const z = 0.5*Math.log((1+rc)/(1-rc));
+  const se = 1/Math.sqrt(n-3);
+  const toR = zz => (Math.exp(2*zz)-1)/(Math.exp(2*zz)+1);
+  return { lo: toR(z-1.96*se), hi: toR(z+1.96*se) };
+}
+
+function setCorrMetric(axis, value){
+  if(axis==='x'){ corrXMetric=value; lsSet('corrXMetric',value); } else { corrYMetric=value; lsSet('corrYMetric',value); }
+  if(LAST_DATA) renderCorrelationAnalysis(LAST_DATA);
+}
+
+function correlationCardHtml(){
+  const xOpts = Object.entries(CORR_METRICS.x).map(([k,l])=>`<option value="${k}" ${k===corrXMetric?'selected':''}>${l}</option>`).join('');
+  const yOpts = Object.entries(CORR_METRICS.y).map(([k,l])=>`<option value="${k}" ${k===corrYMetric?'selected':''}>${l}</option>`).join('');
+  return `<div class="card fade-in">
+    <p class="eyebrow"><span class="dot"></span>Corrélation sommeil / performance</p>
+    <div class="seance-filter-row">
+      <select class="exo-select seance-sort-select" onchange="setCorrMetric('x', this.value)">${xOpts}</select>
+      <select class="exo-select seance-sort-select" onchange="setCorrMetric('y', this.value)">${yOpts}</select>
+    </div>
+    <div id="correlationAnalysis" style="margin-top:16px;"></div>
+  </div>`;
+}
+
+function renderCorrelationAnalysis(data){
+  const el = document.getElementById('correlationAnalysis');
+  if(!el) return;
+  const pairs = buildCorrelationPairs(data, corrXMetric, corrYMetric);
+  if(pairs.length < CORR_MIN_N){
+    el.innerHTML = `<div class="empty">Données insuffisantes pour une corrélation fiable (${pairs.length}/${CORR_MIN_N} observations minimum sur la période chargée).</div>`;
+    return;
+  }
+  const { r, n } = pearsonCorrelation(pairs.map(p=>[p.x,p.y]));
+  const ci = pearsonCI95(r, n);
+  const strength = Math.abs(r) < 0.2 ? 'très faible' : Math.abs(r) < 0.4 ? 'faible' : Math.abs(r) < 0.6 ? 'modérée' : Math.abs(r) < 0.8 ? 'forte' : 'très forte';
+
+  const w=320, h=200, pad=24;
+  const xs = pairs.map(p=>p.x), ys = pairs.map(p=>p.y);
+  const xMin=Math.min(...xs), xMax=Math.max(...xs), xRange=(xMax-xMin)||1;
+  const yMin=Math.min(...ys), yMax=Math.max(...ys), yRange=(yMax-yMin)||1;
+  const px = x => pad + ((x-xMin)/xRange)*(w-pad*2);
+  const py = y => h-pad - ((y-yMin)/yRange)*(h-pad*2);
+  const dots = pairs.map(p=>`<circle cx="${px(p.x).toFixed(1)}" cy="${py(p.y).toFixed(1)}" r="4" fill="var(--gold)" opacity="0.8" onclick="showCorrPoint('${p.date}',${p.x.toFixed(2)},${p.y.toFixed(2)})" style="cursor:pointer;"/>`).join('');
+  // droite de tendance (régression linéaire simple)
+  const mx = xs.reduce((a,b)=>a+b,0)/n, my = ys.reduce((a,b)=>a+b,0)/n;
+  let num_=0, den=0;
+  xs.forEach((x,i)=>{ num_+=(x-mx)*(ys[i]-my); den+=(x-mx)**2; });
+  const slope = den ? num_/den : 0, intercept = my - slope*mx;
+  const lineX1=xMin, lineX2=xMax, lineY1=slope*lineX1+intercept, lineY2=slope*lineX2+intercept;
+
+  el.innerHTML = `
+    <div class="kv-row" style="font-size:14px;">
+      <span>Coefficient r <span class="kv-val mono">${r.toFixed(2)}</span></span>
+      <span>n <span class="kv-val mono">${n}</span></span>
+    </div>
+    <div class="poids-note">Corrélation ${strength}${ci?` · intervalle de confiance 95% : [${ci.lo.toFixed(2)}, ${ci.hi.toFixed(2)}]`:''}. Une corrélation ne prouve pas de causalité.</div>
+    <svg viewBox="0 0 ${w} ${h}" style="width:100%; height:auto; margin-top:14px; overflow:visible;">
+      <line x1="${pad}" y1="${py(lineY1).toFixed(1)}" x2="${w-pad}" y2="${py(lineY2).toFixed(1)}" stroke="var(--text-faint)" stroke-width="1.5" stroke-dasharray="4 4"/>
+      ${dots}
+    </svg>
+    <div class="poids-note" id="corrPointInfo">Touche un point pour voir la date.</div>`;
+}
+function showCorrPoint(date, x, y){
+  document.getElementById('corrPointInfo').textContent = `${fmtDateLabel(date)} — ${CORR_METRICS.x[corrXMetric]} : ${x} · ${CORR_METRICS.y[corrYMetric]} : ${y}`;
+}
+
+// --- Détection de signaux santé : écart à une baseline glissante, jamais un diagnostic ---
+const HEALTH_SIGNAL_METRICS = [
+  { key:'VFC (HRV)', label:'HRV', direction:'low', unit:'ms', decimals:0 },
+  { key:'FCR (RHR)', label:'FC repos', direction:'high', unit:'bpm', decimals:0 },
+  { key:'Freq Respiratoire', label:'Fréquence respiratoire', direction:'both', unit:'/min', decimals:1 },
+  { key:'Sommeil Profond', label:'Sommeil profond', direction:'low', unit:'min', decimals:0 },
+  { key:'Temp Cutanée', label:'Température cutanée', direction:'high', unit:'°', decimals:1 }
+];
+function computeHealthSignals(data, today){
+  const whoop = data.whoop||[];
+  const signals = [];
+  HEALTH_SIGNAL_METRICS.forEach(m=>{
+    const baseline = rollingBaseline(whoop, m.key, today, 30, true);
+    if(!baseline || baseline.stddev===0) return;
+    let deviantDays = 0, lastVal = null;
+    for(let i=0;i<3;i++){
+      const d = addDays(today, -i);
+      const w = whoop.find(x=>x['Date']===d);
+      if(!w || w[m.key]==='' || w[m.key]===undefined) continue;
+      const val = num(w[m.key]);
+      if(val===null) continue;
+      if(i===0) lastVal = val;
+      const dev = (val - baseline.avg) / baseline.stddev;
+      const isDeviant = m.direction==='low' ? dev < -1 : m.direction==='high' ? dev > 1 : Math.abs(dev) > 1.5;
+      if(isDeviant) deviantDays++;
+    }
+    if(deviantDays===0 || lastVal===null) return;
+    const severity = deviantDays>=3 ? 'surveillance' : 'information';
+    signals.push({ label:m.label, deviantDays, severity, lastVal, baseline, unit:m.unit, decimals:m.decimals });
+  });
+  const combinedAlert = signals.filter(s=>s.severity==='surveillance').length >= 2;
+  return { signals, combinedAlert };
+}
+function renderHealthSignalsCard(data, today){
+  const { signals, combinedAlert } = computeHealthSignals(data, today);
+  if(!signals.length){
+    return `<div class="card fade-in">
+      <p class="eyebrow"><span class="dot"></span>Signaux santé</p>
+      <div class="empty">Aucun écart notable détecté sur les 3 derniers jours vs baseline 30 jours.</div>
+      <div class="poids-note" style="margin-top:8px;">Ces signaux sont indicatifs et ne constituent pas un diagnostic médical.</div>
+    </div>`;
+  }
+  const rows = signals.map(s=>{
+    const color = s.severity==='surveillance' ? 'var(--rust)' : 'var(--gold)';
+    const label = s.severity==='surveillance' ? `Persistant (${s.deviantDays}/3j)` : 'Ponctuel';
+    return `<div class="pr-chip"><span class="pr-medal">${s.severity==='surveillance'?'⚠️':'ℹ️'}</span><div class="pr-text"><b>${s.label}</b> — ${s.lastVal.toFixed(s.decimals)}${s.unit} (baseline ${s.baseline.avg.toFixed(s.decimals)}${s.unit})<br><span style="color:${color};">${label}</span></div></div>`;
+  }).join('');
+  const banner = combinedAlert ? `<div class="risk-banner" style="margin-top:12px;">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 9v4M12 17h.01M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg>
+    <div><div class="risk-banner-title">Plusieurs signaux combinés</div><div class="risk-banner-text">Plusieurs métriques dévient de façon persistante en même temps. Un jour plus léger et une attention au sommeil seraient judicieux.</div></div>
+  </div>` : '';
+  return `<div class="card fade-in">
+    <p class="eyebrow"><span class="dot"></span>Signaux santé</p>
+    <div class="pr-list">${rows}</div>
+    ${banner}
+    <div class="poids-note" style="margin-top:12px;">Ces signaux sont indicatifs (écart à ta propre baseline glissante 30 jours) et ne constituent pas un diagnostic médical.</div>
+  </div>`;
+}
+
 function renderSante(data){
   const whoop = data.whoop || [], health = data.health || [];
   const container = document.getElementById('santeContent');
@@ -2589,12 +3744,15 @@ function renderSante(data){
   const hrv = whoop.filter(w=>w['VFC (HRV)']!=='' && w['VFC (HRV)']!==undefined).map(w=>num(w['VFC (HRV)']));
 
   container.innerHTML =
+    renderHealthSignalsCard(data, todayStr()) +
+    correlationCardHtml() +
     healthChartCard('Poids', 'Apple Santé', poids, '#FF7A1A', 1, 'kg') +
     healthChartCard('Masse grasse (IMG)', 'Apple Santé', img, '#FF4B45', 1, '%') +
     healthChartCard('Récupération', 'Whoop', recup, '#35D07F', 0, '%') +
     healthChartCard('Strain quotidien', 'Whoop', strain, '#FF7A1A', 1, '') +
     healthChartCard('Sommeil (performance)', 'Whoop', sommeil, '#4FA9E8', 0, '%') +
     healthChartCard('VFC (HRV)', 'Whoop', hrv, '#4FA9E8', 0, 'ms');
+  renderCorrelationAnalysis(data);
 }
 
 function renderHeatmap(data){
