@@ -1781,25 +1781,30 @@ async function load(isManual){
   }
 }
 
-// --- Objectifs nutritionnels du jour : plages cibles fixes, glucides variables selon jour muscu / repos ---
-function getGlucidesTarget(isTrainingDay){
-  return isTrainingDay ? { min:170, max:220 } : { min:120, max:170 };
-}
-function macroGoalRow(icon, label, current, min, max, unit){
-  const pct = Math.max(0, Math.min(100, (current/max)*100));
-  const color = current<min ? 'var(--rust)' : current>max ? 'var(--gold)' : 'var(--emerald)';
+// --- Objectifs nutritionnels du jour : une valeur précise par macro, glucides et calories selon jour muscu / repos ---
+// (jour muscu = une séance est loggée ce jour-là, rien d'autre)
+const MACRO_TARGETS = {
+  proteines: 150,
+  glucidesMuscu: 195, glucidesRepos: 145,
+  lipides: 55,
+  caloriesMuscu: 2200, caloriesRepos: 1950
+};
+function macroGoalRow(icon, label, current, target, unit){
+  const pct = Math.max(0, Math.min(100, (current/target)*100));
+  const color = pct>=100 ? 'var(--emerald)' : pct>=80 ? 'var(--gold)' : 'var(--rust)';
   return `<div class="progress-block">
-    <div class="progress-head"><span>${icon} ${label}</span><span><b class="mono">${Math.round(current)}</b>${unit} <span style="color:var(--text-faint);">(${min}-${max}${unit})</span></span></div>
+    <div class="progress-head"><span>${icon} ${label}</span><span><b class="mono">${Math.round(current)}</b>${unit} / ${target}${unit}</span></div>
     <div class="progress-track"><div class="progress-fill" style="width:${pct}%; background:${color};"></div></div>
   </div>`;
 }
 function renderMacroGoals(totalCal, totalProt, totalLipides, totalGlucides, isTrainingDay){
-  const glu = getGlucidesTarget(isTrainingDay);
+  const caloriesTarget = isTrainingDay ? MACRO_TARGETS.caloriesMuscu : MACRO_TARGETS.caloriesRepos;
+  const glucidesTarget = isTrainingDay ? MACRO_TARGETS.glucidesMuscu : MACRO_TARGETS.glucidesRepos;
   document.getElementById('macroGoalsContent').innerHTML =
-    macroGoalRow('🔥','Calories', totalCal, 1900, 2250, ' kcal') +
-    macroGoalRow('🥩','Protéines', totalProt, 145, 160, 'g') +
-    macroGoalRow('🍚',`Glucides (${isTrainingDay?'jour muscu':'repos'})`, totalGlucides, glu.min, glu.max, 'g') +
-    macroGoalRow('🥑','Lipides', totalLipides, 50, 60, 'g');
+    macroGoalRow('🔥',`Calories (${isTrainingDay?'jour muscu':'repos'})`, totalCal, caloriesTarget, ' kcal') +
+    macroGoalRow('🥩','Protéines', totalProt, MACRO_TARGETS.proteines, 'g') +
+    macroGoalRow('🍚',`Glucides (${isTrainingDay?'jour muscu':'repos'})`, totalGlucides, glucidesTarget, 'g') +
+    macroGoalRow('🥑','Lipides', totalLipides, MACRO_TARGETS.lipides, 'g');
 }
 
 function renderToday(data){
@@ -1934,7 +1939,7 @@ function renderToday(data){
     } else document.getElementById('pcDelta').textContent = '—';
   } else planCompare.style.display='none';
 
-  const isTrainingDay = !!seanceToday || !!(recoToday && recoToday['Type Séance'] && !/repos/i.test(recoToday['Type Séance']));
+  const isTrainingDay = !!seanceToday;
   renderMacroGoals(totalCal, totalProt, totalLipides, totalGlucides, isTrainingDay);
 
   const depense = whoopToday ? num(whoopToday['Calories Jour']) : null;
