@@ -781,10 +781,7 @@ body.focus-mode #focusExitBtn{ display:flex !important; }
           <div class="pc-box"><div class="pc-val mono" id="pcActual">—</div><div class="pc-label">Réel</div></div>
           <div class="pc-box"><div class="pc-val mono" id="pcDelta">—</div><div class="pc-label">Écart</div></div>
         </div>
-        <div class="progress-block">
-          <div class="progress-head"><span>Objectif protéines</span><span><b class="mono" id="protCurrentVal">0</b>g / 150g</span></div>
-          <div class="progress-track"><div class="progress-fill" id="protFill"></div></div>
-        </div>
+        <div id="macroGoalsContent"></div>
       </div>
 
       <div class="card fade-in" id="bilanCard" style="display:none;">
@@ -1784,6 +1781,27 @@ async function load(isManual){
   }
 }
 
+// --- Objectifs nutritionnels du jour : plages cibles fixes, glucides variables selon jour muscu / repos ---
+function getGlucidesTarget(isTrainingDay){
+  return isTrainingDay ? { min:170, max:220 } : { min:120, max:170 };
+}
+function macroGoalRow(icon, label, current, min, max, unit){
+  const pct = Math.max(0, Math.min(100, (current/max)*100));
+  const color = current<min ? 'var(--rust)' : current>max ? 'var(--gold)' : 'var(--emerald)';
+  return `<div class="progress-block">
+    <div class="progress-head"><span>${icon} ${label}</span><span><b class="mono">${Math.round(current)}</b>${unit} <span style="color:var(--text-faint);">(${min}-${max}${unit})</span></span></div>
+    <div class="progress-track"><div class="progress-fill" style="width:${pct}%; background:${color};"></div></div>
+  </div>`;
+}
+function renderMacroGoals(totalCal, totalProt, totalLipides, totalGlucides, isTrainingDay){
+  const glu = getGlucidesTarget(isTrainingDay);
+  document.getElementById('macroGoalsContent').innerHTML =
+    macroGoalRow('🔥','Calories', totalCal, 1900, 2250, ' kcal') +
+    macroGoalRow('🥩','Protéines', totalProt, 145, 160, 'g') +
+    macroGoalRow('🍚',`Glucides (${isTrainingDay?'jour muscu':'repos'})`, totalGlucides, glu.min, glu.max, 'g') +
+    macroGoalRow('🥑','Lipides', totalLipides, 50, 60, 'g');
+}
+
 function renderToday(data){
   const today = selectedDate;
   document.getElementById('dateLabel').textContent = fmtDateLabel(today);
@@ -1888,12 +1906,12 @@ function renderToday(data){
 
   const mealsToday = repasLog.filter(r=>r['Date']===today);
   const repasContent = document.getElementById('repasContent');
-  let totalCal=0, totalProt=0;
+  let totalCal=0, totalProt=0, totalLipides=0, totalGlucides=0;
   if(mealsToday.length===0){ repasContent.innerHTML='<div class="empty">Aucun repas loggé aujourd\'hui</div>'; document.getElementById('repasTotalRow').style.display='none'; }
   else{
     repasContent.innerHTML = mealsToday.map(m=>{
-      const cal=num(m['Calories'])||0, prot=num(m['Protéines'])||0;
-      totalCal+=cal; totalProt+=prot;
+      const cal=num(m['Calories'])||0, prot=num(m['Protéines'])||0, lip=num(m['Lipides'])||0, glu=num(m['Glucides'])||0;
+      totalCal+=cal; totalProt+=prot; totalLipides+=lip; totalGlucides+=glu;
       return `<div class="meal"><div class="meal-type">${m['Type Repas']||''}</div><div class="meal-desc">${m['Description']||''}</div>
         <div class="macros"><span class="macro-pill"><b>${cal?Math.round(cal):'—'}</b> kcal</span><span class="macro-pill"><b>${num(m['Protéines'])??'—'}</b>g P</span><span class="macro-pill"><b>${num(m['Lipides'])??'—'}</b>g L</span><span class="macro-pill"><b>${num(m['Glucides'])??'—'}</b>g G</span></div></div>`;
     }).join('');
@@ -1916,11 +1934,8 @@ function renderToday(data){
     } else document.getElementById('pcDelta').textContent = '—';
   } else planCompare.style.display='none';
 
-  const protFill = document.getElementById('protFill');
-  const protPct = Math.max(0,Math.min(100,(totalProt/150)*100));
-  countUp(document.getElementById('protCurrentVal'), totalProt, 0);
-  protFill.style.width = protPct+'%';
-  protFill.classList.toggle('done', totalProt>=150);
+  const isTrainingDay = !!seanceToday || !!(recoToday && recoToday['Type Séance'] && !/repos/i.test(recoToday['Type Séance']));
+  renderMacroGoals(totalCal, totalProt, totalLipides, totalGlucides, isTrainingDay);
 
   const depense = whoopToday ? num(whoopToday['Calories Jour']) : null;
   const mange = mealsToday.length ? totalCal : null;
