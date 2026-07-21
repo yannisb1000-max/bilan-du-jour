@@ -3106,6 +3106,65 @@ function showCorrPoint(date, x, y){
   document.getElementById('corrPointInfo').textContent = `${fmtDateLabel(date)} — ${CORR_METRICS.x[corrXMetric]} : ${x} · ${CORR_METRICS.y[corrYMetric]} : ${y}`;
 }
 
+// --- Détection de signaux santé : écart à une baseline glissante, jamais un diagnostic ---
+const HEALTH_SIGNAL_METRICS = [
+  { key:'VFC (HRV)', label:'HRV', direction:'low', unit:'ms', decimals:0 },
+  { key:'FCR (RHR)', label:'FC repos', direction:'high', unit:'bpm', decimals:0 },
+  { key:'Freq Respiratoire', label:'Fréquence respiratoire', direction:'both', unit:'/min', decimals:1 },
+  { key:'Sommeil Profond', label:'Sommeil profond', direction:'low', unit:'min', decimals:0 },
+  { key:'Temp Cutanée', label:'Température cutanée', direction:'high', unit:'°', decimals:1 }
+];
+function computeHealthSignals(data, today){
+  const whoop = data.whoop||[];
+  const signals = [];
+  HEALTH_SIGNAL_METRICS.forEach(m=>{
+    const baseline = rollingBaseline(whoop, m.key, today, 30, true);
+    if(!baseline || baseline.stddev===0) return;
+    let deviantDays = 0, lastVal = null;
+    for(let i=0;i<3;i++){
+      const d = addDays(today, -i);
+      const w = whoop.find(x=>x['Date']===d);
+      if(!w || w[m.key]==='' || w[m.key]===undefined) continue;
+      const val = num(w[m.key]);
+      if(val===null) continue;
+      if(i===0) lastVal = val;
+      const dev = (val - baseline.avg) / baseline.stddev;
+      const isDeviant = m.direction==='low' ? dev < -1 : m.direction==='high' ? dev > 1 : Math.abs(dev) > 1.5;
+      if(isDeviant) deviantDays++;
+    }
+    if(deviantDays===0 || lastVal===null) return;
+    const severity = deviantDays>=3 ? 'surveillance' : 'information';
+    signals.push({ label:m.label, deviantDays, severity, lastVal, baseline, unit:m.unit, decimals:m.decimals });
+  });
+  const combinedAlert = signals.filter(s=>s.severity==='surveillance').length >= 2;
+  return { signals, combinedAlert };
+}
+function renderHealthSignalsCard(data, today){
+  const { signals, combinedAlert } = computeHealthSignals(data, today);
+  if(!signals.length){
+    return `<div class="card fade-in">
+      <p class="eyebrow"><span class="dot"></span>Signaux santé</p>
+      <div class="empty">Aucun écart notable détecté sur les 3 derniers jours vs baseline 30 jours.</div>
+      <div class="poids-note" style="margin-top:8px;">Ces signaux sont indicatifs et ne constituent pas un diagnostic médical.</div>
+    </div>`;
+  }
+  const rows = signals.map(s=>{
+    const color = s.severity==='surveillance' ? 'var(--rust)' : 'var(--gold)';
+    const label = s.severity==='surveillance' ? `Persistant (${s.deviantDays}/3j)` : 'Ponctuel';
+    return `<div class="pr-chip"><span class="pr-medal">${s.severity==='surveillance'?'⚠️':'ℹ️'}</span><div class="pr-text"><b>${s.label}</b> — ${s.lastVal.toFixed(s.decimals)}${s.unit} (baseline ${s.baseline.avg.toFixed(s.decimals)}${s.unit})<br><span style="color:${color};">${label}</span></div></div>`;
+  }).join('');
+  const banner = combinedAlert ? `<div class="risk-banner" style="margin-top:12px;">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 9v4M12 17h.01M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg>
+    <div><div class="risk-banner-title">Plusieurs signaux combinés</div><div class="risk-banner-text">Plusieurs métriques dévient de façon persistante en même temps. Un jour plus léger et une attention au sommeil seraient judicieux.</div></div>
+  </div>` : '';
+  return `<div class="card fade-in">
+    <p class="eyebrow"><span class="dot"></span>Signaux santé</p>
+    <div class="pr-list">${rows}</div>
+    ${banner}
+    <div class="poids-note" style="margin-top:12px;">Ces signaux sont indicatifs (écart à ta propre baseline glissante 30 jours) et ne constituent pas un diagnostic médical.</div>
+  </div>`;
+}
+
 function renderSante(data){
   const whoop = data.whoop || [], health = data.health || [];
   const container = document.getElementById('santeContent');
@@ -3118,6 +3177,7 @@ function renderSante(data){
   const hrv = whoop.filter(w=>w['VFC (HRV)']!=='' && w['VFC (HRV)']!==undefined).map(w=>num(w['VFC (HRV)']));
 
   container.innerHTML =
+    renderHealthSignalsCard(data, todayStr()) +
     correlationCardHtml() +
     healthChartCard('Poids', 'Apple Santé', poids, '#FF7A1A', 1, 'kg') +
     healthChartCard('Masse grasse (IMG)', 'Apple Santé', img, '#FF4B45', 1, '%') +
