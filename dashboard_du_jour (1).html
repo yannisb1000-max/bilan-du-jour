@@ -816,6 +816,15 @@ body{
     <!-- ============ PAGE : PROGRESSION ============ -->
     <div class="page" id="page-progression">
       <div class="card fade-in">
+        <p class="eyebrow"><span class="dot"></span>Répartition du volume musculaire</p>
+        <select class="exo-select" id="muscleVolumePeriodSelect" onchange="setMuscleVolumePeriod(this.value)">
+          <option value="7">7 derniers jours</option>
+          <option value="30" selected>30 derniers jours</option>
+          <option value="90">90 derniers jours</option>
+        </select>
+        <div id="muscleVolumeContent" style="margin-top:16px;"></div>
+      </div>
+      <div class="card fade-in">
         <p class="eyebrow"><span class="dot"></span>Progression par exercice</p>
         <select class="exo-select" id="exoSelect" onchange="renderExoChart()"></select>
         <div class="chart-wrap" id="chartWrap"></div>
@@ -1160,6 +1169,7 @@ async function load(isManual){
     renderMorning(data);
     renderHeaderExtras(data);
     renderProgressionSetup(data);
+    renderMuscleVolumeSection(data);
     renderReference(data);
     const now = new Intl.DateTimeFormat('fr-FR',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Paris'}).format(new Date());
     document.getElementById('syncLabel').textContent = `Mis à jour à ${now}`;
@@ -1639,6 +1649,100 @@ function categorizeExercise(name){
   if(/plank|planche|crunch|abdo|twist|deadbug|sit up/.test(n)) return 'Abdos & Core';
   if(/jump rope|corde.{0,3}sauter|^rowing$|bike erg|jumping jack|marche/.test(n)) return 'Cardio';
   return 'Autre';
+}
+
+// --- Répartition du volume musculaire : groupe principal coeff 1, secondaire coeff configurable ---
+const MUSCLE_SECONDARY_COEF = 0.3; // pondération volontairement faible : les bras/épaules sont synergistes de presque
+// tout mouvement de poussée/tirage — un coefficient trop élevé les ferait dominer artificiellement le classement
+function computeMuscleVolume(seances, startDate, endDate){
+  const result = {};
+  (seances||[]).forEach(s=>{
+    if(s['Date'] < startDate || s['Date'] > endDate) return;
+    if(!s['Détail Exercices']) return;
+    const { exercises } = parseSeanceExercises(s['Détail Exercices']);
+    exercises.forEach(ex=>{
+      const { primary, secondary } = classifyExerciseMuscles(ex.name);
+      let exVolume = 0, exSets = 0;
+      ex.sets.forEach(st=>{
+        const reps = ex.isDuration ? 1 : (num(st.reps)||0);
+        exVolume += (st.charge||0) * reps;
+        exSets += 1;
+      });
+      const addTo = (group, coef) => {
+        if(!result[group]) result[group] = { volume:0, sets:0, exercises:{} };
+        result[group].volume += exVolume*coef;
+        result[group].sets += exSets*coef;
+        result[group].exercises[ex.name] = (result[group].exercises[ex.name]||0) + exVolume*coef;
+      };
+      addTo(primary, 1);
+      secondary.forEach(g=>addTo(g, MUSCLE_SECONDARY_COEF));
+    });
+  });
+  return result;
+}
+
+let muscleVolumePeriod = lsGet('muscleVolumePeriod', 30);
+function setMuscleVolumePeriod(days){
+  muscleVolumePeriod = Number(days);
+  lsSet('muscleVolumePeriod', muscleVolumePeriod);
+  if(LAST_DATA) renderMuscleVolumeSection(LAST_DATA);
+}
+function toggleMuscleDetail(group){
+  const card = document.getElementById('mv-card-'+group);
+  const detail = document.getElementById('mv-detail-'+group);
+  const isOpen = card.classList.contains('open');
+  if(isOpen){ card.classList.remove('open'); detail.style.maxHeight = null; }
+  else{ card.classList.add('open'); detail.style.maxHeight = detail.scrollHeight + 'px'; }
+}
+function renderMuscleVolumeSection(data){
+  document.getElementById('muscleVolumePeriodSelect').value = String(muscleVolumePeriod);
+  const container = document.getElementById('muscleVolumeContent');
+  const today = todayStr();
+  const days = muscleVolumePeriod;
+  const start = addDays(today, -days+1);
+  const prevEnd = addDays(start, -1);
+  const prevStart = addDays(prevEnd, -days+1);
+  const current = computeMuscleVolume(data.seances, start, today);
+  const previous = computeMuscleVolume(data.seances, prevStart, prevEnd);
+
+  const groups = Object.keys(current).filter(g=>current[g].volume>0);
+  const totalVol = groups.reduce((a,g)=>a+current[g].volume,0);
+  if(!totalVol){ container.innerHTML = '<div class="empty">Aucune séance avec charges sur cette période</div>'; return; }
+
+  const sorted = groups.sort((a,b)=>current[b].volume-current[a].volume);
+  const rows = sorted.map(g=>{
+    const pct = (current[g].volume/totalVol*100);
+    const prevVol = previous[g] ? previous[g].volume : 0;
+    const deltaPct = prevVol>0 ? ((current[g].volume-prevVol)/prevVol*100) : null;
+    const exList = Object.entries(current[g].exercises).sort((a,b)=>b[1]-a[1])
+      .map(([exName,vol])=>`<div class="mini-meal"><div class="mm-type">${exName}</div><div class="mm-macros">${Math.round(vol)} kg</div></div>`).join('');
+    return `
+      <div class="seance-mini-card" id="mv-card-${g}" onclick="toggleMuscleDetail('${g}')">
+        <div class="seance-mini-head">
+          <div><div class="seance-mini-name">${g}</div><div class="seance-mini-stats">${Math.round(current[g].volume)} kg · ${pct.toFixed(0)}%${deltaPct!==null?` · ${deltaPct>=0?'+':''}${deltaPct.toFixed(0)}% vs période préc.`:''}</div></div>
+          <svg class="chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+        </div>
+        <div class="progress-track" style="margin-top:8px;"><div class="progress-fill" style="width:${pct}%;"></div></div>
+        <div class="exo-detail" id="mv-detail-${g}"><div class="exo-detail-inner" style="font-family:'Space Grotesk',sans-serif; white-space:normal;">${exList}</div></div>
+      </div>`;
+  }).join('');
+
+  const pushVol = (current['Pectoraux']?current['Pectoraux'].volume:0) + (current['Épaules']?current['Épaules'].volume:0);
+  const pullVol = (current['Dos']?current['Dos'].volume:0) + (current['Bras']?current['Bras'].volume:0);
+  let alertHtml = '';
+  if(pushVol>0 && pullVol>0){
+    const ratio = pushVol/pullVol;
+    if(ratio > 1.4 || ratio < 0.7){
+      const dominant = ratio>1.4 ? 'push (pectoraux/épaules)' : 'tirage (dos/bras)';
+      const lacking = ratio>1.4 ? 'tirage (dos/bras)' : 'push (pectoraux/épaules)';
+      alertHtml = `<div class="risk-banner" style="margin-top:14px;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 9v4M12 17h.01M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg>
+        <div><div class="risk-banner-title">Déséquilibre push / tirage</div><div class="risk-banner-text">Le volume ${dominant} domine nettement sur cette période. Pense à rééquilibrer avec plus de ${lacking}.</div></div>
+      </div>`;
+    }
+  }
+
+  container.innerHTML = `<div class="pr-list" style="gap:10px;">${rows}</div>${alertHtml}`;
 }
 
 function renderProgressionSetup(data){
