@@ -440,6 +440,22 @@ body{
 .sd-ring-val .num{ font-family:'Fraunces',serif; font-size:52px; font-weight:600; line-height:1; }
 .sd-ring-val .lbl{ font-size:11px; text-transform:uppercase; letter-spacing:.1em; color:var(--text-dim); margin-top:6px; }
 .sd-exo-text{ font-size:12.5px; color:var(--text-dim); line-height:1.6; white-space:pre-line; font-family:'IBM Plex Mono',monospace; }
+.sd-exo-card{ background: var(--surface-2); border-radius: var(--radius-md); margin-bottom:12px; }
+.sd-exo-card:last-child{ margin-bottom:0; }
+.sd-exo-head{ display:flex; align-items:center; gap:12px; padding:13px 14px; }
+.sd-exo-avatar{ width:40px; height:40px; border-radius:10px; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
+.sd-exo-name{ flex:1; font-size:13.5px; font-weight:600; min-width:0; }
+.sd-exo-head .chevron{ color:var(--text-faint); flex-shrink:0; }
+.sd-exo-table{ padding: 0 14px 14px; border-top:1px solid var(--hairline); }
+.sd-exo-cols{ display:grid; grid-template-columns:1fr 1fr; font-size:9px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-faint); font-weight:600; margin:13px 0 8px; }
+.sd-exo-cols span:last-child{ text-align:right; }
+.sd-exo-set-row{ display:grid; grid-template-columns:1fr 1fr; padding:5px 0; font-family:'IBM Plex Mono',monospace; font-size:14px; font-weight:600; }
+.sd-exo-set-row div:last-child{ text-align:right; color:var(--text-dim); }
+.sd-exo-total{ padding-top:11px; margin-top:8px; border-top:1px solid var(--hairline); }
+.sd-exo-total .tot-label{ font-size:9px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-faint); font-weight:600; margin-bottom:6px; }
+.sd-exo-total-row{ display:flex; justify-content:space-between; align-items:baseline; }
+.sd-exo-total .tot-val{ font-family:'IBM Plex Mono',monospace; font-size:19px; font-weight:700; }
+.sd-exo-total .tot-val.accent{ color:var(--gold); }
 
 /* ---------- Vital delta & trend ---------- */
 .vital-delta{ font-size:9.5px; color:var(--text-faint); margin-top:3px; font-family:'IBM Plex Mono',monospace; }
@@ -1282,21 +1298,121 @@ function renderHeaderExtras(data){
   } else badge.style.display = 'none';
 }
 
-// --- Onglet Progression : parsing du détail d'exercices, sélection, graphique ---
+// --- Parsing du détail d'exercices : "- Nom : NxR1/R2/... reps, charges C1kg/C2kg/..., total Tkg" ---
+// (ou variante durée pour les exercices chronométrés : "- Nom : Nx1:00, charges 0kg/..., total 0kg")
+function parseFrenchNum(s){
+  const n = parseFloat(String(s).replace(',', '.'));
+  return isNaN(n) ? null : n;
+}
+function parseSetDurationToSeconds(str){
+  const parts = String(str).split(':').map(Number);
+  if(parts.length===2) return parts[0]*60 + parts[1];
+  if(parts.length===3) return parts[0]*3600 + parts[1]*60 + parts[2];
+  return Number(str) || 0;
+}
+function formatSetDuration(sec){
+  const m = Math.floor(sec/60), s = Math.round(sec%60);
+  return `${m}:${String(s).padStart(2,'0')}`;
+}
+function parseSeanceExerciseLine(line){
+  const m = line.trim().match(/^-\s*([^:]+?)\s*:\s*(\d+)x(.+?)(?:\s*reps)?,\s*charges\s+(.+?),\s*total\s+([\d.,]+)\s*kg\s*$/i);
+  if(!m) return null;
+  const name = m[1].trim();
+  const setsCount = parseInt(m[2], 10);
+  const repsOrDurRaw = m[3].trim();
+  const isDuration = repsOrDurRaw.includes(':');
+  const rawList = repsOrDurRaw.split('/').map(x=>x.trim());
+  const chargesList = m[4].split('/').map(c=>parseFrenchNum(c.replace(/kg/i,'').trim()));
+  const total = parseFrenchNum(m[5]);
+  const sets = Array.from({length:setsCount}, (_,i)=>({
+    reps: isDuration ? null : (rawList[i] ?? rawList[rawList.length-1] ?? null),
+    duration: isDuration ? (rawList[i] ?? rawList[rawList.length-1] ?? null) : null,
+    charge: chargesList[i] ?? chargesList[chargesList.length-1] ?? null
+  }));
+  const totalReps = isDuration ? null : sets.reduce((a,st)=>a+(parseFrenchNum(st.reps)||0),0);
+  const totalDurationSec = isDuration ? sets.reduce((a,st)=>a+parseSetDurationToSeconds(st.duration),0) : null;
+  return { name, setsCount, sets, isDuration, total, totalReps, totalDurationSec };
+}
+function parseSeanceExercises(detailText){
+  if(!detailText) return { exercises: [], rawFallback: [] };
+  const exercises = [], rawFallback = [];
+  String(detailText).split('\n').map(l=>l.trim()).filter(Boolean).forEach(line=>{
+    const parsed = parseSeanceExerciseLine(line);
+    if(parsed) exercises.push(parsed); else rawFallback.push(line);
+  });
+  return { exercises, rawFallback };
+}
+const EXO_CATEGORY_STYLE = {
+  'Jambes': { bg:'var(--gold-soft)', fg:'var(--gold)' },
+  'Poitrine': { bg:'var(--rust-soft)', fg:'var(--rust)' },
+  'Dos': { bg:'var(--blue-soft)', fg:'var(--blue)' },
+  'Épaules': { bg:'var(--emerald-soft)', fg:'var(--emerald)' },
+  'Bras': { bg:'var(--gold-soft)', fg:'var(--premium)' },
+  'Abdos & Core': { bg:'var(--gold-soft)', fg:'var(--gold)' },
+  'Cardio': { bg:'var(--blue-soft)', fg:'var(--blue)' },
+  'Autre': { bg:'var(--surface-3)', fg:'var(--text-faint)' }
+};
+const EXO_AVATAR_ICON = '<path d="M4 9v6M2 10v4M7 7v10M17 7v10M20 10v4M22 9v6M7 12h10"/>';
+function renderSeanceExercises(detailText){
+  const { exercises, rawFallback } = parseSeanceExercises(detailText);
+  if(!exercises.length && !rawFallback.length) return '<div class="empty">Détail non disponible</div>';
+  const cards = exercises.map(ex=>{
+    const style = EXO_CATEGORY_STYLE[categorizeExercise(ex.name)] || EXO_CATEGORY_STYLE['Autre'];
+    const rows = ex.sets.map(st=>`
+      <div class="sd-exo-set-row">
+        <div>${ex.isDuration ? st.duration : (st.reps ?? '—')}</div>
+        <div>${st.charge!==null ? st.charge+' kg' : '—'}</div>
+      </div>`).join('');
+    const totLeft = ex.isDuration ? formatSetDuration(ex.totalDurationSec) : ex.totalReps;
+    return `
+      <div class="sd-exo-card">
+        <div class="sd-exo-head">
+          <div class="sd-exo-avatar" style="background:${style.bg};">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="${style.fg}" stroke-width="2">${EXO_AVATAR_ICON}</svg>
+          </div>
+          <div class="sd-exo-name">${ex.name}</div>
+          <svg class="chevron" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg>
+        </div>
+        <div class="sd-exo-table">
+          <div class="sd-exo-cols"><span>${ex.isDuration?'Durée':'Répétitions'}</span><span>Poids</span></div>
+          ${rows}
+          <div class="sd-exo-total">
+            <div class="tot-label">Total</div>
+            <div class="sd-exo-total-row">
+              <span class="tot-val">${totLeft}</span>
+              <span class="tot-val accent">${ex.total} kg</span>
+            </div>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+  const fallbackHtml = rawFallback.length ? `<div class="sd-exo-text">${rawFallback.join('\n')}</div>` : '';
+  return cards + fallbackHtml;
+}
+
+// --- Onglet Progression : sélection d'exercice, graphique de charge ---
 function parseExerciseEntries(seances){
   // index : { nomExercice: [{date, kg}, ...] }
   const index = {};
   seances.forEach(s=>{
     if(!s['Détail Exercices']) return;
     String(s['Détail Exercices']).split('\n').forEach(line=>{
+      const structured = parseSeanceExerciseLine(line);
+      if(structured){
+        const charges = structured.sets.map(st=>st.charge).filter(c=>c!==null && c>0);
+        if(!charges.length) return; // exercice au poids du corps (charges à 0), pas de charge à tracer
+        if(!index[structured.name]) index[structured.name] = [];
+        index[structured.name].push({ date: s['Date'], kg: Math.max(...charges) });
+        return;
+      }
+      // repli pour un format non structuré (ancien historique éventuel) : max de toutes les valeurs "N kg" de la ligne
       const m = line.match(/^-\s*([^:]+?)\s*:\s*(.+)$/);
       if(!m) return;
       const name = m[1].trim();
-      const rest = m[2];
-      const kgMatches = [...rest.matchAll(/(\d+(?:[.,]\d+)?)\s*kg/gi)].map(x=>parseFloat(x[1].replace(',','.')));
-      if(!kgMatches.length) return; // exercice au poids du corps, pas de charge à tracer
+      const kgMatches = [...m[2].matchAll(/(\d+(?:[.,]\d+)?)\s*kg/gi)].map(x=>parseFloat(x[1].replace(',','.')));
+      if(!kgMatches.length) return;
       const maxKg = Math.max(...kgMatches);
-      if(maxKg <= 0) return; // "0 kg" = poids du corps écrit explicitement, pas une vraie charge
+      if(maxKg <= 0) return;
       if(!index[name]) index[name] = [];
       index[name].push({ date: s['Date'], kg: maxKg });
     });
@@ -1888,7 +2004,7 @@ function openSeanceDetail(dateStr){
   const exoHtml = `
     <div class="card fade-in">
       <p class="eyebrow"><span class="dot"></span>Exercices</p>
-      <div class="sd-exo-text">${s['Détail Exercices'] || 'Détail non disponible'}</div>
+      ${renderSeanceExercises(s['Détail Exercices'])}
     </div>`;
 
   document.getElementById('seanceDetailContent').innerHTML = `
@@ -1959,23 +2075,28 @@ async function shareSeanceCard(){
     ['FATIGUE NERV.', num(s['Fatigue Nerveuse']), '#FF4B45'],
   ].filter(([,v])=>v!==null);
   const prLines = s['PRs'] ? String(s['PRs']).split('\n').map(l=>l.replace(/^-\s*/,'').trim()).filter(Boolean) : [];
-  const exoRaw = s['Détail Exercices'] ? String(s['Détail Exercices']).split('\n').map(l=>l.trim()).filter(Boolean) : [];
+  const { exercises: exoExercises, rawFallback: exoFallbackRaw } = parseSeanceExercises(s['Détail Exercices']);
 
   const W = 1080, MARGIN = 100;
   const EXO_FONT = '400 20px "IBM Plex Mono", monospace';
   const measureCanvas = document.createElement('canvas');
   const mctx = measureCanvas.getContext('2d');
   mctx.font = EXO_FONT;
-  const exoLines = [];
-  exoRaw.forEach(line => exoLines.push(...wrapCanvasLines(mctx, line, W - MARGIN*2)));
+  const exoFallbackLines = [];
+  exoFallbackRaw.forEach(line => exoFallbackLines.push(...wrapCanvasLines(mctx, line, W - MARGIN*2)));
 
   // --- Estimation de la hauteur nécessaire avant de créer le canvas définitif ---
   const RING_R = 150, RING_GAP = 90, STATS_H = 90;
   const METER_ROW_H = 56, PR_ROW_H = 46, EXO_ROW_H = 34;
+  const EXO_NAME_H = 40, EXO_COLHEAD_H = 32, EXO_TOTAL_GAP = 34, EXO_TOTAL_VAL_H = 46, EXO_GAP_AFTER = 40;
   let H = 380 + RING_R*2 + RING_GAP + STATS_H + 60;
   if(meters.length) H += 90 + meters.length*METER_ROW_H;
   if(prLines.length) H += 90 + prLines.length*PR_ROW_H;
-  if(exoLines.length) H += 110 + exoLines.length*EXO_ROW_H;
+  if(exoExercises.length || exoFallbackLines.length){
+    H += 110;
+    exoExercises.forEach(ex => { H += EXO_NAME_H + EXO_COLHEAD_H + ex.setsCount*EXO_ROW_H + EXO_TOTAL_GAP + EXO_TOTAL_VAL_H + EXO_GAP_AFTER; });
+    H += exoFallbackLines.length*EXO_ROW_H;
+  }
   H += 110;
 
   const canvas = document.createElement('canvas');
@@ -2060,14 +2181,53 @@ async function shareSeanceCard(){
     prLines.forEach(line=>{ ctx.fillText('🏅 ' + line, MARGIN, y); y += PR_ROW_H; });
   }
 
-  if(exoLines.length){
+  if(exoExercises.length || exoFallbackLines.length){
     y += 64;
     ctx.textAlign='left';
     ctx.font = '700 30px "Fraunces", serif'; ctx.fillStyle = '#FFFFFF';
     ctx.fillText('Exercices', MARGIN, y);
     y += 44;
-    ctx.font = EXO_FONT; ctx.fillStyle = '#B8B8B8';
-    exoLines.forEach(line=>{ ctx.fillText(line, MARGIN, y); y += EXO_ROW_H; });
+
+    exoExercises.forEach(ex=>{
+      ctx.textAlign='left';
+      ctx.font = '700 24px "Space Grotesk", sans-serif'; ctx.fillStyle = '#FFFFFF';
+      ctx.fillText(ex.name, MARGIN, y);
+      y += EXO_NAME_H;
+
+      ctx.font = '700 14px "Space Grotesk", sans-serif'; ctx.fillStyle = '#9B9B9B';
+      ctx.textAlign='left'; ctx.fillText(ex.isDuration ? 'DURÉE' : 'RÉPÉTITIONS', MARGIN, y);
+      ctx.textAlign='right'; ctx.fillText('POIDS', W-MARGIN, y);
+      y += EXO_COLHEAD_H;
+
+      ctx.font = '600 22px "IBM Plex Mono", monospace';
+      ex.sets.forEach(st=>{
+        ctx.textAlign='left'; ctx.fillStyle = '#FFFFFF';
+        ctx.fillText(String(ex.isDuration ? st.duration : (st.reps ?? '—')), MARGIN, y);
+        ctx.textAlign='right'; ctx.fillStyle = '#B8B8B8';
+        ctx.fillText(st.charge!==null ? st.charge+' kg' : '—', W-MARGIN, y);
+        y += EXO_ROW_H;
+      });
+
+      y += EXO_TOTAL_GAP;
+      ctx.font = '700 14px "Space Grotesk", sans-serif'; ctx.fillStyle = '#9B9B9B';
+      ctx.textAlign='left'; ctx.fillText('TOTAL', MARGIN, y);
+      y += 30;
+      ctx.font = '700 30px "IBM Plex Mono", monospace';
+      ctx.textAlign='left'; ctx.fillStyle = '#FFFFFF';
+      ctx.fillText(String(ex.isDuration ? formatSetDuration(ex.totalDurationSec) : ex.totalReps), MARGIN, y);
+      ctx.textAlign='right'; ctx.fillStyle = '#FF7A1A';
+      ctx.fillText(`${ex.total} kg`, W-MARGIN, y);
+
+      y += EXO_GAP_AFTER;
+      ctx.beginPath(); ctx.moveTo(MARGIN,y-EXO_GAP_AFTER/2); ctx.lineTo(W-MARGIN,y-EXO_GAP_AFTER/2);
+      ctx.strokeStyle='rgba(255,255,255,0.08)'; ctx.lineWidth=1; ctx.stroke();
+    });
+
+    if(exoFallbackLines.length){
+      ctx.textAlign='left';
+      ctx.font = EXO_FONT; ctx.fillStyle = '#B8B8B8';
+      exoFallbackLines.forEach(line=>{ ctx.fillText(line, MARGIN, y); y += EXO_ROW_H; });
+    }
   }
 
   ctx.textAlign = 'center';
