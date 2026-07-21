@@ -110,20 +110,14 @@ body{
   display:flex; align-items:center; gap:5px; background: var(--gold-soft); color: var(--gold);
   font-size:11px; font-weight:600; padding:5px 10px; border-radius:20px; margin-top:6px; width:fit-content;
 }
-#refreshBtn{
+#refreshBtn, #skinBtn, #searchBtn, #notifBtn, #focusBtn{
   background: var(--surface-2); border:1px solid var(--hairline-strong); color: var(--text-dim);
   width:36px; height:36px; border-radius:50%; cursor:pointer;
-  display:flex; align-items:center; justify-content:center;
+  display:flex; align-items:center; justify-content:center; position:relative;
   transition: border-color .2s, color .2s;
 }
-#refreshBtn:hover{ border-color: var(--gold); color: var(--gold); }
+#refreshBtn:hover, #skinBtn:hover, #searchBtn:hover, #notifBtn:hover, #focusBtn:hover{ border-color: var(--gold); color: var(--gold); }
 #refreshBtn.spin svg{ animation: spin .7s linear; }
-#skinBtn{
-  background: var(--surface-2); border:1px solid var(--hairline-strong); color: var(--text-dim);
-  width:36px; height:36px; border-radius:50%; cursor:pointer;
-  display:flex; align-items:center; justify-content:center; transition: border-color .2s, color .2s;
-}
-#skinBtn:hover{ border-color: var(--gold); color: var(--gold); }
 #skinBtn.sober-active{ color: var(--gold); border-color: var(--gold); }
 @keyframes spin{ to{ transform: rotate(360deg); } }
 
@@ -417,13 +411,15 @@ body{
 .seance-list-row .chevron{ color: var(--text-faint); flex-shrink:0; }
 
 /* ---------- Séance : détail plein écran (style Whoop) ---------- */
-#seanceDetailOverlay, #exerciseDetailOverlay, #seanceDraftOverlay{
+#seanceDetailOverlay, #exerciseDetailOverlay, #seanceDraftOverlay, #searchOverlay, #notifOverlay{
   position:fixed; inset:0; z-index:70; overflow-y:auto; -webkit-overflow-scrolling:touch;
   background: var(--bg-glow), var(--bg); display:none;
 }
 #exerciseDetailOverlay{ z-index:75; }
 #seanceDraftOverlay{ z-index:76; }
-#seanceDetailOverlay.open, #exerciseDetailOverlay.open, #seanceDraftOverlay.open{ display:block; }
+#notifOverlay{ z-index:77; }
+#searchOverlay{ z-index:80; }
+#seanceDetailOverlay.open, #exerciseDetailOverlay.open, #seanceDraftOverlay.open, #searchOverlay.open, #notifOverlay.open{ display:block; }
 .sd-topbar{
   display:flex; align-items:center; justify-content:space-between;
   max-width:520px; margin:0 auto; padding: calc(env(safe-area-inset-top) + 18px) 18px 8px;
@@ -620,6 +616,9 @@ body{
         <div class="streak-badge" id="streakBadge" style="display:none;"></div>
       </div>
       <div style="display:flex; gap:8px;">
+        <button id="searchBtn" aria-label="Rechercher" onclick="openSearch()" title="Rechercher (Ctrl/Cmd+K)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>
+        </button>
         <button id="skinBtn" aria-label="Changer d'ambiance" onclick="toggleSkin()" title="Sobre / Flashy">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 2l1.8 5.6L19 9l-5.2 1.4L12 16l-1.8-5.6L5 9l5.2-1.4z"/></svg>
         </button>
@@ -927,6 +926,18 @@ body{
     </button>
   </div>
   <div class="wrap" id="seanceDraftContent"></div>
+</div>
+
+<div id="searchOverlay">
+  <div class="sd-topbar">
+    <button class="sd-icon-btn" onclick="closeSearch()" aria-label="Fermer la recherche">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+  </div>
+  <div class="wrap">
+    <input type="text" id="searchInput" class="seance-filter-date" placeholder="Rechercher séances, exercices, repas, bilans…" oninput="runSearch(this.value)" autocomplete="off">
+    <div id="searchResults" style="margin-top:16px;"></div>
+  </div>
 </div>
 
 <div class="tabbar" id="tabbar" style="display:none;">
@@ -1388,6 +1399,88 @@ function removeDraftExercise(dateStr, idx){
   renderSeanceDraftContent(draft);
 }
 
+// --- Recherche globale : indexe tout ce qui est déjà chargé, rien n'est requêté à part ---
+let SEARCH_INDEX = [];
+function buildSearchIndex(data){
+  const index = [];
+  (data.seances||[]).forEach(s=>{
+    index.push({ category:'Séances', title: s['Type']||'Séance', subtitle: fmtDateLabel(s['Date']),
+      action: () => { switchPage('seances'); openSeanceDetail(s['Date']); } });
+    if(s['Détail Exercices']){
+      const { exercises } = parseSeanceExercises(s['Détail Exercices']);
+      exercises.forEach(ex=>{
+        index.push({ category:'Exercices', title: ex.name, subtitle: `Loggé le ${fmtDateLabel(s['Date'])}`,
+          action: () => { openExerciseDetail(ex.name); } });
+      });
+    }
+    if(s['PRs'] && String(s['PRs']).trim()){
+      String(s['PRs']).split('\n').filter(l=>l.trim()).forEach(line=>{
+        index.push({ category:'Records', title: line.replace(/^-\s*/,''), subtitle: fmtDateLabel(s['Date']),
+          action: () => { switchPage('seances'); openSeanceDetail(s['Date']); } });
+      });
+    }
+  });
+  (data.repas_log||[]).forEach(r=>{
+    index.push({ category:'Repas', title: `${r['Type Repas']||'Repas'} — ${r['Description']||''}`, subtitle: fmtDateLabel(r['Date']),
+      action: () => { jumpToDate(r['Date']); switchPage('today'); } });
+  });
+  (data.bilans||[]).forEach(b=>{
+    if(b['Bilan']) index.push({ category:'Bilans', title: String(b['Bilan']).slice(0,70), subtitle: fmtDateLabel(b['Date']),
+      action: () => { jumpToDate(b['Date']); switchPage('today'); } });
+  });
+  (data.whoop||[]).forEach(w=>{
+    if(w['Récupération %']!=='' && w['Récupération %']!==undefined){
+      index.push({ category:'Métriques', title: `Récupération ${Math.round(num(w['Récupération %']))}%`, subtitle: fmtDateLabel(w['Date']),
+        action: () => { jumpToDate(w['Date']); switchPage('today'); } });
+    }
+  });
+  SEARCH_INDEX = index;
+}
+function openSearch(){
+  document.getElementById('searchOverlay').classList.add('open');
+  const input = document.getElementById('searchInput');
+  input.value = '';
+  runSearch('');
+  setTimeout(()=>input.focus(), 50);
+}
+function closeSearch(){ document.getElementById('searchOverlay').classList.remove('open'); }
+function runSearchResult(idx){
+  const item = SEARCH_INDEX[idx];
+  if(!item) return;
+  closeSearch();
+  item.action();
+}
+function runSearch(query){
+  const resultsEl = document.getElementById('searchResults');
+  const q = normalizeSearchText(query.trim());
+  if(!q){ resultsEl.innerHTML = '<div class="empty">Tape pour chercher dans toutes tes séances, exercices, repas, bilans et métriques chargés.</div>'; return; }
+  const matches = [];
+  SEARCH_INDEX.forEach((item, idx)=>{
+    if(normalizeSearchText(item.title+' '+item.subtitle).includes(q)) matches.push({ item, idx });
+  });
+  if(!matches.length){ resultsEl.innerHTML = `<div class="empty">Aucun résultat pour "${escAttr(query)}".</div>`; return; }
+  const grouped = {};
+  matches.slice(0,80).forEach(({item,idx})=>{ (grouped[item.category]=grouped[item.category]||[]).push({item,idx}); });
+  resultsEl.innerHTML = Object.entries(grouped).map(([cat,items])=>`
+    <div class="jd-section-label">${cat}</div>
+    ${items.map(({item,idx})=>`<div class="journal-row" style="padding:10px 0;" onclick="runSearchResult(${idx})">
+      <div class="journal-body"><div class="journal-title">${item.title}</div><div class="journal-sub">${item.subtitle}</div></div>
+      <svg class="chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg>
+    </div>`).join('')}
+  `).join('');
+}
+document.addEventListener('keydown', e => {
+  if((e.metaKey||e.ctrlKey) && e.key.toLowerCase()==='k'){ e.preventDefault(); openSearch(); return; }
+  if(e.key==='Escape'){
+    if(document.getElementById('searchOverlay').classList.contains('open')){ closeSearch(); return; }
+    const notif = document.getElementById('notifOverlay');
+    if(notif && notif.classList.contains('open')){ closeNotifPanel(); return; }
+    if(document.getElementById('seanceDraftOverlay').classList.contains('open')){ closeSeanceDraft(); return; }
+    if(document.getElementById('exerciseDetailOverlay').classList.contains('open')){ closeExerciseDetail(); return; }
+    if(document.getElementById('seanceDetailOverlay').classList.contains('open')){ closeSeanceDetail(); return; }
+  }
+});
+
 function countUp(el, target, decimals){
   decimals = decimals || 0;
   const duration = 750; const t0 = performance.now();
@@ -1425,6 +1518,8 @@ document.addEventListener('touchstart', e => {
   if(document.getElementById('seanceDetailOverlay').classList.contains('open')) return;
   if(document.getElementById('exerciseDetailOverlay').classList.contains('open')) return;
   if(document.getElementById('seanceDraftOverlay').classList.contains('open')) return;
+  if(document.getElementById('searchOverlay').classList.contains('open')) return;
+  if(document.getElementById('notifOverlay') && document.getElementById('notifOverlay').classList.contains('open')) return;
   if(window.scrollY===0) pullStartY = e.touches[0].clientY;
   swipeStartX = e.touches[0].clientX;
   swipeStartY = e.touches[0].clientY;
@@ -1433,6 +1528,8 @@ document.addEventListener('touchmove', e => {
   if(document.getElementById('seanceDetailOverlay').classList.contains('open')) return;
   if(document.getElementById('exerciseDetailOverlay').classList.contains('open')) return;
   if(document.getElementById('seanceDraftOverlay').classList.contains('open')) return;
+  if(document.getElementById('searchOverlay').classList.contains('open')) return;
+  if(document.getElementById('notifOverlay') && document.getElementById('notifOverlay').classList.contains('open')) return;
   if(pullStartY===null) return;
   const dy = e.touches[0].clientY - pullStartY;
   if(dy>0 && window.scrollY===0){
@@ -1446,6 +1543,8 @@ document.addEventListener('touchend', e => {
   if(document.getElementById('seanceDetailOverlay').classList.contains('open')) return;
   if(document.getElementById('exerciseDetailOverlay').classList.contains('open')) return;
   if(document.getElementById('seanceDraftOverlay').classList.contains('open')) return;
+  if(document.getElementById('searchOverlay').classList.contains('open')) return;
+  if(document.getElementById('notifOverlay') && document.getElementById('notifOverlay').classList.contains('open')) return;
   // Swipe horizontal → changer d'onglet
   if(swipeStartX!==null && e.changedTouches && e.changedTouches.length){
     const endX = e.changedTouches[0].clientX, endY = e.changedTouches[0].clientY;
@@ -1498,6 +1597,7 @@ async function load(isManual){
     renderProgressionSetup(data);
     renderMuscleVolumeSection(data);
     renderReference(data);
+    buildSearchIndex(data);
     const now = new Intl.DateTimeFormat('fr-FR',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Paris'}).format(new Date());
     document.getElementById('syncLabel').textContent = `Mis à jour à ${now}`;
     document.getElementById('loadingState').style.display='none';
