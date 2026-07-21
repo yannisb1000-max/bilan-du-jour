@@ -417,12 +417,13 @@ body{
 .seance-list-row .chevron{ color: var(--text-faint); flex-shrink:0; }
 
 /* ---------- Séance : détail plein écran (style Whoop) ---------- */
-#seanceDetailOverlay, #exerciseDetailOverlay{
+#seanceDetailOverlay, #exerciseDetailOverlay, #seanceDraftOverlay{
   position:fixed; inset:0; z-index:70; overflow-y:auto; -webkit-overflow-scrolling:touch;
   background: var(--bg-glow), var(--bg); display:none;
 }
 #exerciseDetailOverlay{ z-index:75; }
-#seanceDetailOverlay.open, #exerciseDetailOverlay.open{ display:block; }
+#seanceDraftOverlay{ z-index:76; }
+#seanceDetailOverlay.open, #exerciseDetailOverlay.open, #seanceDraftOverlay.open{ display:block; }
 .sd-topbar{
   display:flex; align-items:center; justify-content:space-between;
   max-width:520px; margin:0 auto; padding: calc(env(safe-area-inset-top) + 18px) 18px 8px;
@@ -716,6 +717,24 @@ body{
         </div>
       </div>
 
+      <div class="card fade-in" id="coachCard" style="display:none;">
+        <p class="eyebrow"><span class="dot"></span>Coach (calculé localement)</p>
+        <div class="reco-type" id="coachType">—</div>
+        <div class="stat-grid" style="margin-top:12px;">
+          <div class="stat"><div class="stat-val" id="coachDuree">—</div><div class="stat-label">Durée cible</div></div>
+          <div class="stat"><div class="stat-val" id="coachStrain">—</div><div class="stat-label">Strain cible</div></div>
+          <div class="stat"><div class="stat-val" id="coachRpe">—</div><div class="stat-label">RPE cible</div></div>
+        </div>
+        <div class="ressenti-row" id="coachGroupes" style="margin-top:12px;"></div>
+        <div class="poids-note" id="coachJustification" style="margin-top:10px;"></div>
+        <div id="coachExercicesWrap" style="margin-top:12px;">
+          <div class="jd-section-label" style="margin:0 0 8px;">Exercices proposés</div>
+          <div class="ressenti-row" id="coachExercices"></div>
+        </div>
+        <div class="poids-note" id="coachAlternative" style="margin-top:10px; font-style:italic;"></div>
+        <button class="quick-btn emerald" style="width:100%; justify-content:center; margin-top:14px; cursor:pointer; border:1px solid var(--hairline-strong);" onclick="createSeanceDraft()"><span class="dot"></span>Créer ma séance (brouillon local)</button>
+      </div>
+
       <div class="card fade-in">
         <p class="eyebrow"><span class="dot"></span>Actions rapides</p>
         <div class="quick-actions">
@@ -894,6 +913,15 @@ body{
     </button>
   </div>
   <div class="wrap" id="exerciseDetailContent"></div>
+</div>
+
+<div id="seanceDraftOverlay">
+  <div class="sd-topbar">
+    <button class="sd-icon-btn" onclick="closeSeanceDraft()" aria-label="Retour">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+  </div>
+  <div class="wrap" id="seanceDraftContent"></div>
 </div>
 
 <div class="tabbar" id="tabbar" style="display:none;">
@@ -1193,6 +1221,168 @@ function renderReadinessCard(whoopToday, whoop, health, today){
   document.getElementById('readinessContext').innerHTML = chips.join('');
 }
 
+// --- Coach du jour : prescription calculée localement à partir des règles définies, jamais inventée ---
+const COACH_TIER_CONFIG = {
+  repos: { type:'Repos ou mobilité légère', duree:[15,25], strain:[0,6], rpe:[0,3] },
+  technique: { type:'Technique / Zone 2', duree:[30,45], strain:[7,11], rpe:[4,6] },
+  normale: { type:'Séance normale', duree:[45,70], strain:[11,16], rpe:[6,8] },
+  inconnu: { type:'Données insuffisantes pour prescrire', duree:[null,null], strain:[null,null], rpe:[null,null] }
+};
+function computeCoachPrescription(data, today){
+  const whoop = data.whoop||[], seances = data.seances||[];
+  const w = whoop.find(x=>x['Date']===today);
+  const recup = w ? num(w['Récupération %']) : null;
+  const sommeil = w ? num(w['Sommeil Perf %']) : null;
+  const hrvBaseline = rollingBaseline(whoop, 'VFC (HRV)', today, 30, true);
+  const hrvToday = w ? num(w['VFC (HRV)']) : null;
+  const hrvLow = (hrvToday!==null && hrvBaseline && hrvBaseline.stddev>0) ? (hrvToday < hrvBaseline.avg - hrvBaseline.stddev) : false;
+
+  const reasons = [];
+  let tier;
+  if(recup===null){ tier = 'inconnu'; reasons.push('récupération du jour indisponible'); }
+  else if(recup < 35){ tier = 'repos'; reasons.push(`récupération basse (${Math.round(recup)}%)`); }
+  else if(recup <= 60){ tier = 'technique'; reasons.push(`récupération modérée (${Math.round(recup)}%)`); }
+  else if(sommeil!==null && sommeil>=70){ tier = 'normale'; reasons.push(`récupération haute (${Math.round(recup)}%) et sommeil correct (${Math.round(sommeil)}%)`); }
+  else { tier = 'technique'; reasons.push(`récupération haute (${Math.round(recup)}%) mais sommeil ${sommeil!==null?`insuffisant (${Math.round(sommeil)}%)`:'indisponible'}`); }
+
+  let volumeModifier = 1;
+  if(hrvLow){ volumeModifier = 0.7; reasons.push(`HRV nettement sous la baseline 30j (${Math.round(hrvToday)}ms vs ${Math.round(hrvBaseline.avg)}ms)`); }
+
+  const recentMuscles = new Set();
+  seances.forEach(s=>{
+    if(!s['Détail Exercices']) return;
+    const daysAgo = (new Date(today+'T00:00:00') - new Date(s['Date']+'T00:00:00')) / 86400000;
+    if(daysAgo>=0 && daysAgo<2){
+      const { exercises } = parseSeanceExercises(s['Détail Exercices']);
+      exercises.forEach(ex=> recentMuscles.add(classifyExerciseMuscles(ex.name).primary));
+    }
+  });
+
+  const cfg = COACH_TIER_CONFIG[tier];
+  const allMuscleFreq = {};
+  seances.forEach(s=>{
+    if(!s['Détail Exercices']) return;
+    const { exercises } = parseSeanceExercises(s['Détail Exercices']);
+    exercises.forEach(ex=>{
+      const g = classifyExerciseMuscles(ex.name).primary;
+      allMuscleFreq[g] = (allMuscleFreq[g]||0)+1;
+    });
+  });
+  const candidateGroups = Object.keys(allMuscleFreq).filter(g=>!recentMuscles.has(g) && g!=='Cardio' && g!=='Autre')
+    .sort((a,b)=>allMuscleFreq[b]-allMuscleFreq[a]);
+  const recommendedGroups = (tier==='repos' || tier==='inconnu') ? [] : candidateGroups.slice(0,2);
+
+  const exerciseFreq = {};
+  seances.forEach(s=>{
+    if(!s['Détail Exercices']) return;
+    const { exercises } = parseSeanceExercises(s['Détail Exercices']);
+    exercises.forEach(ex=>{
+      const g = classifyExerciseMuscles(ex.name).primary;
+      if(!recommendedGroups.includes(g)) return;
+      exerciseFreq[ex.name] = (exerciseFreq[ex.name]||0)+1;
+    });
+  });
+  const proposedExercises = Object.keys(exerciseFreq).sort((a,b)=>exerciseFreq[b]-exerciseFreq[a]).slice(0,5);
+
+  if(recentMuscles.size) reasons.push(`à éviter en charge lourde : ${[...recentMuscles].join(', ')} (entraînés il y a moins de 48h)`);
+
+  const dureeMin = cfg.duree[0]!==null ? Math.round(cfg.duree[0]*volumeModifier) : null;
+  const dureeMax = cfg.duree[1]!==null ? Math.round(cfg.duree[1]*volumeModifier) : null;
+
+  return {
+    type: cfg.type, dureeMin, dureeMax,
+    strainMin: cfg.strain[0], strainMax: cfg.strain[1],
+    rpeMin: cfg.rpe[0], rpeMax: cfg.rpe[1],
+    groupes: recommendedGroups, exercices: proposedExercises,
+    justification: reasons.join(' · '),
+    alternative: dureeMin!==null
+      ? `Version plus légère : ${Math.round(dureeMin*0.6)}-${Math.round(dureeMax*0.6)} min, RPE ≤ ${Math.max(2,(cfg.rpe[0]||2))}, mobilité et technique uniquement.`
+      : ''
+  };
+}
+
+let LAST_COACH_PRESCRIPTION = null;
+function renderCoachCard(data, today){
+  const card = document.getElementById('coachCard');
+  const p = computeCoachPrescription(data, today);
+  LAST_COACH_PRESCRIPTION = p;
+  card.style.display = 'block';
+  document.getElementById('coachType').textContent = p.type;
+  document.getElementById('coachDuree').textContent = p.dureeMin!==null ? `${p.dureeMin}-${p.dureeMax}` : '—';
+  document.getElementById('coachStrain').textContent = p.strainMin!==null ? `${p.strainMin}-${p.strainMax}` : '—';
+  document.getElementById('coachRpe').textContent = p.rpeMin!==null ? `${p.rpeMin}-${p.rpeMax}` : '—';
+  document.getElementById('coachGroupes').innerHTML = p.groupes.length
+    ? p.groupes.map(g=>`<div class="ressenti-chip"><b>${g}</b></div>`).join('')
+    : '<div class="empty">Aucun groupe spécifique recommandé</div>';
+  document.getElementById('coachJustification').textContent = p.justification;
+  document.getElementById('coachExercices').innerHTML = p.exercices.length
+    ? p.exercices.map(e=>`<div class="ressenti-chip">${e}</div>`).join('')
+    : '<div class="empty">Pas assez d\'historique pour proposer des exercices précis</div>';
+  document.getElementById('coachAlternative').textContent = p.alternative;
+}
+
+// --- Brouillon de séance local (jamais synchronisé avec le Sheet — écriture non disponible depuis cette app) ---
+function createSeanceDraft(){
+  const today = selectedDate;
+  let draft = lsGet('seanceDraft_'+today, null);
+  if(!draft){
+    const p = LAST_COACH_PRESCRIPTION;
+    draft = { date: today, type: p ? p.type : 'Séance', exercises: (p && p.exercices.length ? p.exercices : ['Nouvel exercice']).map(name=>({ name, sets:3, reps:'10', charge:'' })) };
+    lsSet('seanceDraft_'+today, draft);
+  }
+  openSeanceDraft(today);
+}
+function openSeanceDraft(dateStr){
+  const draft = lsGet('seanceDraft_'+dateStr, null);
+  if(!draft) return;
+  renderSeanceDraftContent(draft);
+  document.getElementById('seanceDraftOverlay').classList.add('open');
+  document.getElementById('seanceDraftOverlay').scrollTop = 0;
+}
+function closeSeanceDraft(){ document.getElementById('seanceDraftOverlay').classList.remove('open'); }
+function renderSeanceDraftContent(draft){
+  const rows = draft.exercises.map((ex,i)=>`
+    <div class="mini-meal">
+      <input class="seance-filter-date" style="margin-bottom:6px; width:100%;" value="${escAttr(ex.name)}" onchange="updateDraftField('${draft.date}',${i},'name',this.value)">
+      <div style="display:flex; gap:8px;">
+        <input type="number" class="seance-filter-date" placeholder="Séries" value="${ex.sets}" onchange="updateDraftField('${draft.date}',${i},'sets',this.value)">
+        <input class="seance-filter-date" placeholder="Reps" value="${escAttr(ex.reps)}" onchange="updateDraftField('${draft.date}',${i},'reps',this.value)">
+        <input class="seance-filter-date" placeholder="Kg" value="${escAttr(ex.charge)}" onchange="updateDraftField('${draft.date}',${i},'charge',this.value)">
+      </div>
+      <button class="seance-filter-clear" style="position:static; margin-top:6px; color:var(--rust);" onclick="removeDraftExercise('${draft.date}',${i})">Retirer cet exercice</button>
+    </div>`).join('');
+  document.getElementById('seanceDraftContent').innerHTML = `
+    <div class="card fade-in">
+      <p class="eyebrow"><span class="dot"></span>Brouillon — ${draft.type}</p>
+      <div class="poids-note">Enregistré uniquement sur cet appareil (pas de synchronisation avec le Sheet). Logge la séance réelle via tes Raccourcis iOS une fois terminée.</div>
+    </div>
+    <div class="card fade-in">
+      <p class="eyebrow"><span class="dot"></span>Exercices</p>
+      ${rows}
+      <button class="quick-btn emerald" style="width:100%; justify-content:center; margin-top:10px; cursor:pointer; border:1px solid var(--hairline-strong);" onclick="addDraftExercise('${draft.date}')"><span class="dot"></span>Ajouter un exercice</button>
+    </div>`;
+}
+function updateDraftField(dateStr, idx, field, value){
+  const draft = lsGet('seanceDraft_'+dateStr, null);
+  if(!draft) return;
+  draft.exercises[idx][field] = field==='sets' ? (Number(value)||0) : value;
+  lsSet('seanceDraft_'+dateStr, draft);
+}
+function addDraftExercise(dateStr){
+  const draft = lsGet('seanceDraft_'+dateStr, null);
+  if(!draft) return;
+  draft.exercises.push({ name:'Nouvel exercice', sets:3, reps:'10', charge:'' });
+  lsSet('seanceDraft_'+dateStr, draft);
+  renderSeanceDraftContent(draft);
+}
+function removeDraftExercise(dateStr, idx){
+  const draft = lsGet('seanceDraft_'+dateStr, null);
+  if(!draft) return;
+  draft.exercises.splice(idx,1);
+  lsSet('seanceDraft_'+dateStr, draft);
+  renderSeanceDraftContent(draft);
+}
+
 function countUp(el, target, decimals){
   decimals = decimals || 0;
   const duration = 750; const t0 = performance.now();
@@ -1229,6 +1419,7 @@ const pullIndicator = document.getElementById('pullIndicator');
 document.addEventListener('touchstart', e => {
   if(document.getElementById('seanceDetailOverlay').classList.contains('open')) return;
   if(document.getElementById('exerciseDetailOverlay').classList.contains('open')) return;
+  if(document.getElementById('seanceDraftOverlay').classList.contains('open')) return;
   if(window.scrollY===0) pullStartY = e.touches[0].clientY;
   swipeStartX = e.touches[0].clientX;
   swipeStartY = e.touches[0].clientY;
@@ -1236,6 +1427,7 @@ document.addEventListener('touchstart', e => {
 document.addEventListener('touchmove', e => {
   if(document.getElementById('seanceDetailOverlay').classList.contains('open')) return;
   if(document.getElementById('exerciseDetailOverlay').classList.contains('open')) return;
+  if(document.getElementById('seanceDraftOverlay').classList.contains('open')) return;
   if(pullStartY===null) return;
   const dy = e.touches[0].clientY - pullStartY;
   if(dy>0 && window.scrollY===0){
@@ -1248,6 +1440,7 @@ document.addEventListener('touchmove', e => {
 document.addEventListener('touchend', e => {
   if(document.getElementById('seanceDetailOverlay').classList.contains('open')) return;
   if(document.getElementById('exerciseDetailOverlay').classList.contains('open')) return;
+  if(document.getElementById('seanceDraftOverlay').classList.contains('open')) return;
   // Swipe horizontal → changer d'onglet
   if(swipeStartX!==null && e.changedTouches && e.changedTouches.length){
     const endX = e.changedTouches[0].clientX, endY = e.changedTouches[0].clientY;
@@ -1391,6 +1584,8 @@ function renderToday(data){
     document.getElementById('recoSub').textContent = raison.slice(0,90) + (raison.length>90?'…':'');
     document.getElementById('recoBadge').textContent = recoToday['Déficit Calorique Cible'] ? `−${recoToday['Déficit Calorique Cible']} kcal` : '';
   } else recoCard.style.display='none';
+
+  renderCoachCard(data, today);
 
   const seanceToday = seances.find(s=>s['Date']===today);
   const seanceContent = document.getElementById('seanceContent');
