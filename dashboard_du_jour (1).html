@@ -861,6 +861,28 @@ body{
     <!-- ============ PAGE : PROGRESSION ============ -->
     <div class="page" id="page-progression">
       <div class="card fade-in">
+        <p class="eyebrow"><span class="dot"></span>Objectifs</p>
+        <div id="goalsList"></div>
+        <button class="quick-btn emerald" style="width:100%; justify-content:center; margin-top:10px; cursor:pointer; border:1px solid var(--hairline-strong);" onclick="toggleGoalForm()"><span class="dot"></span>Nouvel objectif</button>
+        <div id="goalFormPanel" style="display:none; margin-top:14px; padding-top:14px; border-top:1px solid var(--hairline);">
+          <input type="text" id="goalTitre" class="seance-filter-date" placeholder="Titre (ex : Bench Press 100kg)" style="margin-bottom:8px; width:100%;">
+          <select id="goalCategorie" class="exo-select" style="margin-bottom:8px;" onchange="onGoalCategorieChange()">
+            <option value="poids">Poids</option>
+            <option value="exercice">Charge d'un exercice</option>
+            <option value="mesure">Mesure corporelle</option>
+            <option value="personnalise">Personnalisé (saisie manuelle)</option>
+          </select>
+          <select id="goalMetric" class="exo-select" style="margin-bottom:8px; display:none;"></select>
+          <div style="display:flex; gap:8px; margin-bottom:8px;">
+            <input type="number" id="goalCible" class="seance-filter-date" placeholder="Valeur cible">
+            <input type="text" id="goalUnite" class="seance-filter-date" placeholder="Unité">
+          </div>
+          <input type="date" id="goalDateCible" class="seance-filter-date" style="margin-bottom:10px; width:100%;">
+          <button class="quick-btn" style="width:100%; justify-content:center; cursor:pointer; border:none;" onclick="createGoal()"><span class="dot"></span>Créer l'objectif</button>
+        </div>
+      </div>
+      <div id="autoRecordsContent"></div>
+      <div class="card fade-in">
         <p class="eyebrow"><span class="dot"></span>Répartition du volume musculaire</p>
         <select class="exo-select" id="muscleVolumePeriodSelect" onchange="setMuscleVolumePeriod(this.value)">
           <option value="7">7 derniers jours</option>
@@ -1596,6 +1618,8 @@ async function load(isManual){
     renderHeaderExtras(data);
     renderProgressionSetup(data);
     renderMuscleVolumeSection(data);
+    renderGoalsList(data);
+    document.getElementById('autoRecordsContent').innerHTML = renderAutoRecordsCard(data);
     renderReference(data);
     buildSearchIndex(data);
     const now = new Intl.DateTimeFormat('fr-FR',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Paris'}).format(new Date());
@@ -1961,6 +1985,155 @@ function showWeekDayDetail(dateStr){
 
 // --- Parsing du détail d'exercices : "- Nom : NxR1/R2/... reps, charges C1kg/C2kg/..., total Tkg" ---
 // (ou variante durée pour les exercices chronométrés : "- Nom : Nx1:00, charges 0kg/..., total 0kg")
+// --- Objectifs (CRUD local) : progression et echeance auto-calculees a partir des donnees reelles ---
+function getGoals(){ return lsGet('goals', []); }
+function saveGoals(goals){ lsSet('goals', goals); }
+function computeGoalCurrentValue(goal, data){
+  if(!data) return goal.valeur_actuelle!=null ? goal.valeur_actuelle : null;
+  if(goal.categorie==='poids'){
+    const health = (data.health||[]).filter(h=>h['Poids']!=='' && h['Poids']!==undefined);
+    return health.length ? num(health[health.length-1]['Poids']) : null;
+  }
+  if(goal.categorie==='exercice'){
+    const profile = buildExerciseProfile(data, goal.metric);
+    return profile ? profile.bestChargeEver : null;
+  }
+  if(goal.categorie==='mesure'){
+    const health = (data.health||[]).filter(h=>h[goal.metric]!=='' && h[goal.metric]!==undefined);
+    return health.length ? num(health[health.length-1][goal.metric]) : null;
+  }
+  return goal.valeur_actuelle!=null ? goal.valeur_actuelle : null;
+}
+function computeGoalProgress(goal, currentVal){
+  if(currentVal===null || goal.valeur_cible===goal.valeur_initiale) return null;
+  const pct = ((currentVal-goal.valeur_initiale)/(goal.valeur_cible-goal.valeur_initiale))*100;
+  return Math.max(0, Math.min(100, pct));
+}
+function computeGoalETA(goal, currentVal){
+  if(currentVal===null || !goal.created_at) return null;
+  const daysElapsed = Math.max(1, Math.floor((new Date(todayStr()+'T00:00:00') - new Date(goal.created_at+'T00:00:00'))/86400000));
+  const rate = (currentVal - goal.valeur_initiale) / daysElapsed;
+  if(rate===0) return null;
+  const remaining = goal.valeur_cible - currentVal;
+  if(remaining===0) return { date: todayStr(), atteint:true };
+  if((remaining>0) !== (rate>0)) return null;
+  const daysNeeded = Math.round(remaining/rate);
+  return { date: addDays(todayStr(), daysNeeded), atteint:false };
+}
+function toggleGoalForm(){
+  const panel = document.getElementById('goalFormPanel');
+  const isOpen = panel.style.display==='block';
+  if(isOpen){ panel.style.display='none'; return; }
+  onGoalCategorieChange();
+  panel.style.display='block';
+}
+function onGoalCategorieChange(){
+  const cat = document.getElementById('goalCategorie').value;
+  const metricSelect = document.getElementById('goalMetric');
+  if(cat==='exercice'){
+    const names = Object.keys(window.EXO_INDEX||{});
+    metricSelect.innerHTML = names.map(n=>`<option value="${escAttr(n)}">${n}</option>`).join('');
+    metricSelect.style.display = 'block';
+  } else if(cat==='mesure'){
+    const fields = ['IMC','IMG','Tour de taille','Poids sans graisse','Graisse corporelle','Graisse viscérale','Graisse sous-cutanée'];
+    metricSelect.innerHTML = fields.map(f=>`<option value="${f}">${f}</option>`).join('');
+    metricSelect.style.display = 'block';
+  } else {
+    metricSelect.style.display = 'none';
+  }
+}
+function createGoal(){
+  const titre = document.getElementById('goalTitre').value.trim();
+  const categorie = document.getElementById('goalCategorie').value;
+  const metric = document.getElementById('goalMetric').style.display!=='none' ? document.getElementById('goalMetric').value : null;
+  const cible = Number(document.getElementById('goalCible').value);
+  const unite = document.getElementById('goalUnite').value.trim();
+  const dateCible = document.getElementById('goalDateCible').value || null;
+  if(!titre || isNaN(cible)) return;
+  const initVal = computeGoalCurrentValue({ categorie, metric }, LAST_DATA);
+  const goal = {
+    id: 'g'+Date.now(), categorie, metric, titre,
+    valeur_initiale: initVal!==null?initVal:0, valeur_actuelle: initVal!==null?initVal:0,
+    valeur_cible: cible, unite, date_cible: dateCible, statut:'actif', created_at: todayStr()
+  };
+  const goals = getGoals();
+  goals.push(goal);
+  saveGoals(goals);
+  document.getElementById('goalFormPanel').style.display='none';
+  document.getElementById('goalTitre').value=''; document.getElementById('goalCible').value=''; document.getElementById('goalUnite').value='';
+  renderGoalsList(LAST_DATA);
+}
+function deleteGoal(id){
+  saveGoals(getGoals().filter(g=>g.id!==id));
+  renderGoalsList(LAST_DATA);
+}
+function renderGoalsList(data){
+  const goals = getGoals();
+  const el = document.getElementById('goalsList');
+  if(!el) return;
+  if(!goals.length){ el.innerHTML = '<div class="empty">Aucun objectif pour l\'instant</div>'; return; }
+  el.innerHTML = goals.map(g=>{
+    const current = computeGoalCurrentValue(g, data);
+    const progress = computeGoalProgress(g, current);
+    const eta = computeGoalETA(g, current);
+    const statut = progress!==null && progress>=100 ? 'Atteint' : 'Actif';
+    return `<div class="seance-mini-card" style="margin-bottom:10px; cursor:default;">
+      <div class="seance-mini-head">
+        <div><div class="seance-mini-name">${g.titre}</div><div class="seance-mini-stats">${current!==null?current:'—'}${g.unite||''} / ${g.valeur_cible}${g.unite||''} · ${statut}</div></div>
+        <button class="seance-filter-clear" style="position:static; color:var(--rust);" onclick="deleteGoal('${g.id}')" aria-label="Supprimer l'objectif">✕</button>
+      </div>
+      <div class="progress-track" style="margin-top:8px;"><div class="progress-fill${progress!==null&&progress>=100?' done':''}" style="width:${progress!==null?progress:0}%;"></div></div>
+      <div class="poids-note" style="margin-top:6px;">${eta ? (eta.atteint?'Objectif déjà atteint au rythme actuel':'Estimation : atteint vers le '+fmtDateLabel(eta.date)) : "Pas assez d'historique pour estimer une date"}</div>
+    </div>`;
+  }).join('');
+}
+
+// --- Records auto-detectes (charge max, volume max, meilleure serie, plus longue serie active) ---
+function computeLongestStreak(data){
+  const allDates = new Set([...(data.whoop||[]).map(w=>w['Date']), ...(data.seances||[]).map(s=>s['Date']), ...(data.repas_log||[]).map(r=>r['Date']), ...(data.health||[]).map(h=>h['Date'])]);
+  if(!allDates.size) return 0;
+  const sorted = [...allDates].sort();
+  let longest=1, current=1;
+  for(let i=1;i<sorted.length;i++){
+    if(addDays(sorted[i-1],1)===sorted[i]){ current++; longest=Math.max(longest,current); } else current=1;
+  }
+  return longest;
+}
+function computeAutoRecords(data){
+  const seances = data.seances||[];
+  let maxCharge=null, maxChargeExo=null, maxChargeDate=null;
+  let maxSessionTonnage=null, maxSessionDate=null, maxSessionType=null;
+  let maxSetVolume=null, maxSetExo=null, maxSetDate=null;
+  seances.forEach(s=>{
+    const tonnage = num(s['Tonnage Total']);
+    if(tonnage!==null && (maxSessionTonnage===null || tonnage>maxSessionTonnage)){ maxSessionTonnage=tonnage; maxSessionDate=s['Date']; maxSessionType=s['Type']; }
+    if(!s['Détail Exercices']) return;
+    const { exercises } = parseSeanceExercises(s['Détail Exercices']);
+    exercises.forEach(ex=>{
+      ex.sets.forEach(st=>{
+        if(st.charge===null) return;
+        if(maxCharge===null || st.charge>maxCharge){ maxCharge=st.charge; maxChargeExo=ex.name; maxChargeDate=s['Date']; }
+        const reps = ex.isDuration ? 0 : (num(st.reps)||0);
+        const setVol = st.charge*reps;
+        if(setVol>0 && (maxSetVolume===null || setVol>maxSetVolume)){ maxSetVolume=setVol; maxSetExo=ex.name; maxSetDate=s['Date']; }
+      });
+    });
+  });
+  return { maxCharge, maxChargeExo, maxChargeDate, maxSessionTonnage, maxSessionDate, maxSessionType, maxSetVolume, maxSetExo, maxSetDate, longestStreak: computeLongestStreak(data) };
+}
+function renderAutoRecordsCard(data){
+  const r = computeAutoRecords(data);
+  if(r.maxCharge===null && r.maxSessionTonnage===null){
+    return `<div class="card fade-in"><p class="eyebrow"><span class="dot"></span>Records automatiques</p><div class="empty">Pas assez de données pour détecter des records</div></div>`;
+  }
+  const chips = [];
+  if(r.maxCharge!==null) chips.push(`<div class="pr-chip"><span class="pr-medal">🏋️</span><div class="pr-text"><b>Charge max</b><br>${r.maxChargeExo} — ${r.maxCharge}kg (${fmtDateLabel(r.maxChargeDate)})</div></div>`);
+  if(r.maxSessionTonnage!==null) chips.push(`<div class="pr-chip"><span class="pr-medal">📦</span><div class="pr-text"><b>Volume max (séance)</b><br>${r.maxSessionType||'Séance'} — ${Math.round(r.maxSessionTonnage)}kg (${fmtDateLabel(r.maxSessionDate)})</div></div>`);
+  if(r.maxSetVolume!==null) chips.push(`<div class="pr-chip"><span class="pr-medal">💪</span><div class="pr-text"><b>Meilleure série</b><br>${r.maxSetExo} (${fmtDateLabel(r.maxSetDate)})</div></div>`);
+  chips.push(`<div class="pr-chip"><span class="pr-medal">🔥</span><div class="pr-text"><b>Plus longue série active</b><br>${r.longestStreak} jour${r.longestStreak>1?'s':''}</div></div>`);
+  return `<div class="card fade-in"><p class="eyebrow"><span class="dot"></span>Records automatiques</p><div class="pr-list">${chips.join('')}</div></div>`;
+}
+
 function parseFrenchNum(s){
   const n = parseFloat(String(s).replace(',', '.'));
   return isNaN(n) ? null : n;
