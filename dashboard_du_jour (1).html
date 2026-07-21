@@ -633,6 +633,28 @@ body{
 
       <div id="riskBanner"></div>
 
+      <div class="card hero-card fade-in" id="readinessCard" style="display:none;">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+          <p class="eyebrow" style="margin:0;"><span class="dot"></span>Score de préparation</p>
+          <button class="sd-icon-btn" style="width:26px; height:26px; flex-shrink:0;" onclick="toggleReadinessConfig()" aria-label="Configurer les pondérations">⚙</button>
+        </div>
+        <div class="hero-num"><span class="mono" id="readinessVal">—</span><span class="unit">/100</span></div>
+        <div class="hero-sub" id="readinessStateLabel"></div>
+        <div class="poids-note" id="readinessConfidence"></div>
+        <div class="score-breakdown" id="readinessBreakdown" style="margin-top:16px;"></div>
+        <div class="ressenti-row" id="readinessContext" style="margin-top:14px;"></div>
+        <div id="readinessConfigPanel" style="display:none; margin-top:16px; padding-top:16px; border-top:1px solid var(--hairline);">
+          <div class="progress-head"><span>Récupération (%)</span></div>
+          <input type="number" id="rwRecup" class="seance-filter-date" style="margin-bottom:10px;" min="0" max="100">
+          <div class="progress-head"><span>Sommeil (%)</span></div>
+          <input type="number" id="rwSommeil" class="seance-filter-date" style="margin-bottom:10px;" min="0" max="100">
+          <div class="progress-head"><span>Récupération de charge liée au strain (%)</span></div>
+          <input type="number" id="rwStrain" class="seance-filter-date" style="margin-bottom:14px;" min="0" max="100">
+          <button class="quick-btn" style="width:100%; justify-content:center; cursor:pointer; border:none;" onclick="saveReadinessWeights()"><span class="dot"></span>Enregistrer les pondérations</button>
+          <div class="poids-note" style="margin-top:8px;">Exprimées en %, renormalisées automatiquement pour totaliser 100.</div>
+        </div>
+      </div>
+
       <div class="card hero-card fade-in">
         <p class="eyebrow"><span class="dot"></span>Bilan calorique</p>
         <div class="hero-num">
@@ -990,7 +1012,7 @@ function addDays(dateStr, delta){
   const fmt = new Intl.DateTimeFormat('fr-CA', { year:'numeric', month:'2-digit', day:'2-digit' });
   return fmt.format(dt);
 }
-function num(v){ const n = Number(v); return isNaN(n) ? null : n; }
+function num(v){ if(v==='' || v===null || v===undefined) return null; const n = Number(v); return isNaN(n) ? null : n; }
 
 // ==================== Fondations partagées (v18) ====================
 // Persistance locale (préférences, brouillons, objectifs) — namespacée, jamais confondue avec les données Sheets.
@@ -1063,6 +1085,113 @@ function classifyExerciseMuscles(name){
   return { primary:'Autre', secondary:[] };
 }
 const MUSCLE_GROUPS_ORDER = ['Pectoraux','Dos','Épaules','Bras','Jambes','Abdominaux','Cardio','Autre'];
+
+// --- Score de préparation : pondérations configurables (persistées localement), renormalisées à 1 ---
+const READINESS_DEFAULT_WEIGHTS = { recup: 0.58, sommeil: 0.32, strain: 0.10 };
+function getReadinessWeights(){
+  const w = lsGet('readinessWeights', READINESS_DEFAULT_WEIGHTS);
+  const sum = (w.recup||0) + (w.sommeil||0) + (w.strain||0);
+  if(!sum) return READINESS_DEFAULT_WEIGHTS;
+  return { recup: w.recup/sum, sommeil: w.sommeil/sum, strain: w.strain/sum };
+}
+function setReadinessWeights(recup, sommeil, strain){ lsSet('readinessWeights', { recup, sommeil, strain }); }
+
+function computeReadiness(whoopToday){
+  const w = getReadinessWeights();
+  const recup = whoopToday ? num(whoopToday['Récupération %']) : null;
+  const sommeil = whoopToday ? num(whoopToday['Sommeil Perf %']) : null;
+  const strain = whoopToday ? num(whoopToday['Strain Jour']) : null;
+  const comps = [];
+  if(recup!==null) comps.push({ label:'Récupération', raw:`${Math.round(recup)}%`, value: recup/100, weight:w.recup });
+  if(sommeil!==null) comps.push({ label:'Sommeil', raw:`${Math.round(sommeil)}%`, value: sommeil/100, weight:w.sommeil });
+  if(strain!==null){
+    const strainScore = Math.max(0, 100-strain*4);
+    comps.push({ label:'Récupération de charge', raw:`Strain ${strain}`, value: strainScore/100, weight:w.strain });
+  }
+  if(!comps.length) return null;
+  const usedWeightSum = comps.reduce((a,c)=>a+c.weight,0);
+  const score = Math.max(0, Math.min(100, Math.round(comps.reduce((a,c)=>a+c.value*c.weight,0) / usedWeightSum * 100)));
+  const confidence = comps.length===3 ? { label:'Confiance haute', color:'var(--emerald)' }
+    : comps.length===2 ? { label:'Confiance moyenne', color:'var(--gold)' }
+    : { label:'Confiance faible — données incomplètes', color:'var(--rust)' };
+  let state;
+  if(score<40) state = { label:'Récupération prioritaire', color:'var(--rust)' };
+  else if(score<70) state = { label:'Charge à ajuster', color:'var(--gold)' };
+  else if(score<85) state = { label:'Prêt à performer', color:'var(--emerald)' };
+  else state = { label:'Haute disponibilité', color:'var(--emerald)' };
+  return { score, comps, confidence, state };
+}
+
+function computeReadinessContext(whoop, health, today){
+  const hrvBaseline = rollingBaseline(whoop, 'VFC (HRV)', today, 30, true);
+  const rhrBaseline = rollingBaseline(whoop, 'FCR (RHR)', today, 30, true);
+  const wToday = whoop.find(w=>w['Date']===today);
+  const hrvToday = wToday ? num(wToday['VFC (HRV)']) : null;
+  const rhrToday = wToday ? num(wToday['FCR (RHR)']) : null;
+
+  const SLEEP_TARGET_MIN = 480;
+  let debt = 0, nights = 0;
+  for(let i=0;i<7;i++){
+    const d = addDays(today, -i);
+    const w = whoop.find(x=>x['Date']===d);
+    if(!w || w['Sommeil Profond']==='') continue;
+    const asleep = (num(w['Sommeil Profond'])||0)+(num(w['Sommeil REM'])||0)+(num(w['Sommeil Léger'])||0);
+    if(asleep>0){ nights++; debt += Math.max(0, SLEEP_TARGET_MIN-asleep); }
+  }
+  return {
+    hrv: (hrvToday!==null && hrvBaseline) ? { value:hrvToday, delta: hrvToday-hrvBaseline.avg } : null,
+    rhr: (rhrToday!==null && rhrBaseline) ? { value:rhrToday, delta: rhrToday-rhrBaseline.avg } : null,
+    sleepDebtMin: nights ? debt : null
+  };
+}
+
+function toggleReadinessConfig(){
+  const panel = document.getElementById('readinessConfigPanel');
+  const isOpen = panel.style.display === 'block';
+  if(isOpen){ panel.style.display = 'none'; return; }
+  const w = getReadinessWeights();
+  document.getElementById('rwRecup').value = Math.round(w.recup*100);
+  document.getElementById('rwSommeil').value = Math.round(w.sommeil*100);
+  document.getElementById('rwStrain').value = Math.round(w.strain*100);
+  panel.style.display = 'block';
+}
+function saveReadinessWeights(){
+  const recup = Number(document.getElementById('rwRecup').value)||0;
+  const sommeil = Number(document.getElementById('rwSommeil').value)||0;
+  const strain = Number(document.getElementById('rwStrain').value)||0;
+  setReadinessWeights(recup, sommeil, strain);
+  document.getElementById('readinessConfigPanel').style.display = 'none';
+  if(LAST_DATA) renderToday(LAST_DATA);
+}
+
+function renderReadinessCard(whoopToday, whoop, health, today){
+  const card = document.getElementById('readinessCard');
+  const result = computeReadiness(whoopToday);
+  if(!result){ card.style.display = 'none'; return; }
+  card.style.display = 'block';
+
+  const valEl = document.getElementById('readinessVal');
+  valEl.textContent = result.score;
+  valEl.style.color = result.state.color;
+  document.getElementById('readinessStateLabel').textContent = result.state.label;
+  document.getElementById('readinessStateLabel').style.color = result.state.color;
+  const confEl = document.getElementById('readinessConfidence');
+  confEl.textContent = result.confidence.label;
+  confEl.style.color = result.confidence.color;
+
+  document.getElementById('readinessBreakdown').innerHTML = result.comps.map(c=>`
+    <div>
+      <div class="score-item-head"><span class="si-label">${c.label}</span><span class="si-raw mono">${c.raw}</span></div>
+      <div class="progress-track"><div class="progress-fill" style="width:${Math.round(c.value*100)}%;"></div></div>
+    </div>`).join('');
+
+  const ctx = computeReadinessContext(whoop, health, today);
+  const chips = [];
+  if(ctx.hrv) chips.push(`<div class="ressenti-chip">HRV <b>${Math.round(ctx.hrv.value)}ms</b> (${ctx.hrv.delta>=0?'+':''}${ctx.hrv.delta.toFixed(0)} vs 30j)</div>`);
+  if(ctx.rhr) chips.push(`<div class="ressenti-chip">FC repos <b>${Math.round(ctx.rhr.value)}</b> (${ctx.rhr.delta>=0?'+':''}${ctx.rhr.delta.toFixed(0)} vs 30j)</div>`);
+  if(ctx.sleepDebtMin!==null && ctx.sleepDebtMin>0) chips.push(`<div class="ressenti-chip">Dette de sommeil 7j <b>${minToHM(ctx.sleepDebtMin)}</b></div>`);
+  document.getElementById('readinessContext').innerHTML = chips.join('');
+}
 
 function countUp(el, target, decimals){
   decimals = decimals || 0;
@@ -1204,6 +1333,8 @@ function renderToday(data){
   setRing('ringRecup', recup!==null ? recup : 0);
   setRing('ringStrain', strain!==null ? (strain/21)*100 : 0);
   setRing('ringSommeil', sommeil!==null ? sommeil : 0);
+
+  renderReadinessCard(whoopToday, whoop, health, today);
 
   // --- Deltas vs moyenne 30 jours (hors aujourd'hui) ---
   function avgExcludingToday(key){
