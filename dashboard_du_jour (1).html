@@ -3007,6 +3007,105 @@ function healthChartCard(label, source, values, colorHex, decimals, unit){
   </div>`;
 }
 
+// --- Corrélation sommeil / performance : Pearson réel, jamais présenté comme causalité ---
+const CORR_MIN_N = 14;
+const CORR_METRICS = {
+  x: { sleepDuration:'Durée de sommeil (h)', sleepPerf:'Performance sommeil (%)', recup:'Récupération (%)' },
+  y: { strain:'Strain séance', tonnage:'Tonnage (kg)', difficulte:'Difficulté (RPE, /10)' }
+};
+let corrXMetric = lsGet('corrXMetric', 'sleepPerf');
+let corrYMetric = lsGet('corrYMetric', 'strain');
+
+function buildCorrelationPairs(data, xKey, yKey){
+  const whoop = data.whoop||[], seances = data.seances||[];
+  const dates = new Set([...whoop.map(w=>w['Date']), ...seances.map(s=>s['Date'])]);
+  const pairs = [];
+  [...dates].sort().forEach(d=>{
+    const w = whoop.find(x=>x['Date']===d);
+    const s = seances.find(x=>x['Date']===d);
+    let xVal=null, yVal=null;
+    if(xKey==='sleepDuration' && w){
+      const mins = (num(w['Sommeil Profond'])||0)+(num(w['Sommeil REM'])||0)+(num(w['Sommeil Léger'])||0);
+      xVal = mins>0 ? mins/60 : null;
+    } else if(xKey==='sleepPerf' && w) xVal = num(w['Sommeil Perf %']);
+    else if(xKey==='recup' && w) xVal = num(w['Récupération %']);
+    if(yKey==='strain' && s) yVal = num(s['Strain Séance']);
+    else if(yKey==='tonnage' && s) yVal = num(s['Tonnage Total']);
+    else if(yKey==='difficulte' && s) yVal = num(s['Difficulté']);
+    if(xVal!==null && yVal!==null) pairs.push({ date:d, x:xVal, y:yVal });
+  });
+  return pairs;
+}
+
+function pearsonCI95(r, n){
+  if(n<4) return null;
+  const rc = Math.max(-0.9999, Math.min(0.9999, r));
+  const z = 0.5*Math.log((1+rc)/(1-rc));
+  const se = 1/Math.sqrt(n-3);
+  const toR = zz => (Math.exp(2*zz)-1)/(Math.exp(2*zz)+1);
+  return { lo: toR(z-1.96*se), hi: toR(z+1.96*se) };
+}
+
+function setCorrMetric(axis, value){
+  if(axis==='x'){ corrXMetric=value; lsSet('corrXMetric',value); } else { corrYMetric=value; lsSet('corrYMetric',value); }
+  if(LAST_DATA) renderCorrelationAnalysis(LAST_DATA);
+}
+
+function correlationCardHtml(){
+  const xOpts = Object.entries(CORR_METRICS.x).map(([k,l])=>`<option value="${k}" ${k===corrXMetric?'selected':''}>${l}</option>`).join('');
+  const yOpts = Object.entries(CORR_METRICS.y).map(([k,l])=>`<option value="${k}" ${k===corrYMetric?'selected':''}>${l}</option>`).join('');
+  return `<div class="card fade-in">
+    <p class="eyebrow"><span class="dot"></span>Corrélation sommeil / performance</p>
+    <div class="seance-filter-row">
+      <select class="exo-select seance-sort-select" onchange="setCorrMetric('x', this.value)">${xOpts}</select>
+      <select class="exo-select seance-sort-select" onchange="setCorrMetric('y', this.value)">${yOpts}</select>
+    </div>
+    <div id="correlationAnalysis" style="margin-top:16px;"></div>
+  </div>`;
+}
+
+function renderCorrelationAnalysis(data){
+  const el = document.getElementById('correlationAnalysis');
+  if(!el) return;
+  const pairs = buildCorrelationPairs(data, corrXMetric, corrYMetric);
+  if(pairs.length < CORR_MIN_N){
+    el.innerHTML = `<div class="empty">Données insuffisantes pour une corrélation fiable (${pairs.length}/${CORR_MIN_N} observations minimum sur la période chargée).</div>`;
+    return;
+  }
+  const { r, n } = pearsonCorrelation(pairs.map(p=>[p.x,p.y]));
+  const ci = pearsonCI95(r, n);
+  const strength = Math.abs(r) < 0.2 ? 'très faible' : Math.abs(r) < 0.4 ? 'faible' : Math.abs(r) < 0.6 ? 'modérée' : Math.abs(r) < 0.8 ? 'forte' : 'très forte';
+
+  const w=320, h=200, pad=24;
+  const xs = pairs.map(p=>p.x), ys = pairs.map(p=>p.y);
+  const xMin=Math.min(...xs), xMax=Math.max(...xs), xRange=(xMax-xMin)||1;
+  const yMin=Math.min(...ys), yMax=Math.max(...ys), yRange=(yMax-yMin)||1;
+  const px = x => pad + ((x-xMin)/xRange)*(w-pad*2);
+  const py = y => h-pad - ((y-yMin)/yRange)*(h-pad*2);
+  const dots = pairs.map(p=>`<circle cx="${px(p.x).toFixed(1)}" cy="${py(p.y).toFixed(1)}" r="4" fill="var(--gold)" opacity="0.8" onclick="showCorrPoint('${p.date}',${p.x.toFixed(2)},${p.y.toFixed(2)})" style="cursor:pointer;"/>`).join('');
+  // droite de tendance (régression linéaire simple)
+  const mx = xs.reduce((a,b)=>a+b,0)/n, my = ys.reduce((a,b)=>a+b,0)/n;
+  let num_=0, den=0;
+  xs.forEach((x,i)=>{ num_+=(x-mx)*(ys[i]-my); den+=(x-mx)**2; });
+  const slope = den ? num_/den : 0, intercept = my - slope*mx;
+  const lineX1=xMin, lineX2=xMax, lineY1=slope*lineX1+intercept, lineY2=slope*lineX2+intercept;
+
+  el.innerHTML = `
+    <div class="kv-row" style="font-size:14px;">
+      <span>Coefficient r <span class="kv-val mono">${r.toFixed(2)}</span></span>
+      <span>n <span class="kv-val mono">${n}</span></span>
+    </div>
+    <div class="poids-note">Corrélation ${strength}${ci?` · intervalle de confiance 95% : [${ci.lo.toFixed(2)}, ${ci.hi.toFixed(2)}]`:''}. Une corrélation ne prouve pas de causalité.</div>
+    <svg viewBox="0 0 ${w} ${h}" style="width:100%; height:auto; margin-top:14px; overflow:visible;">
+      <line x1="${pad}" y1="${py(lineY1).toFixed(1)}" x2="${w-pad}" y2="${py(lineY2).toFixed(1)}" stroke="var(--text-faint)" stroke-width="1.5" stroke-dasharray="4 4"/>
+      ${dots}
+    </svg>
+    <div class="poids-note" id="corrPointInfo">Touche un point pour voir la date.</div>`;
+}
+function showCorrPoint(date, x, y){
+  document.getElementById('corrPointInfo').textContent = `${fmtDateLabel(date)} — ${CORR_METRICS.x[corrXMetric]} : ${x} · ${CORR_METRICS.y[corrYMetric]} : ${y}`;
+}
+
 function renderSante(data){
   const whoop = data.whoop || [], health = data.health || [];
   const container = document.getElementById('santeContent');
@@ -3019,12 +3118,14 @@ function renderSante(data){
   const hrv = whoop.filter(w=>w['VFC (HRV)']!=='' && w['VFC (HRV)']!==undefined).map(w=>num(w['VFC (HRV)']));
 
   container.innerHTML =
+    correlationCardHtml() +
     healthChartCard('Poids', 'Apple Santé', poids, '#FF7A1A', 1, 'kg') +
     healthChartCard('Masse grasse (IMG)', 'Apple Santé', img, '#FF4B45', 1, '%') +
     healthChartCard('Récupération', 'Whoop', recup, '#35D07F', 0, '%') +
     healthChartCard('Strain quotidien', 'Whoop', strain, '#FF7A1A', 1, '') +
     healthChartCard('Sommeil (performance)', 'Whoop', sommeil, '#4FA9E8', 0, '%') +
     healthChartCard('VFC (HRV)', 'Whoop', hrv, '#4FA9E8', 0, 'ms');
+  renderCorrelationAnalysis(data);
 }
 
 function renderHeatmap(data){
