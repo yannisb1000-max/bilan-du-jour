@@ -389,6 +389,58 @@ body{
 .chart-stats{ display:flex; justify-content:space-between; margin-top:14px; font-size:12px; color:var(--text-faint); }
 .chart-stats b{ color:var(--text); font-family:'IBM Plex Mono',monospace; }
 
+/* ---------- Séances (onglet liste) ---------- */
+.seance-filter-row{ display:flex; gap:10px; }
+.seance-filter-date-wrap{ position:relative; flex:1; }
+.seance-filter-date{
+  width:100%; background: var(--surface-2); border:1px solid var(--hairline-strong); color: var(--text);
+  font-family:'Space Grotesk',sans-serif; font-size:13.5px; font-weight:500; padding:12px 30px 12px 14px;
+  border-radius: var(--radius-sm); color-scheme: dark light;
+}
+.seance-filter-clear{
+  position:absolute; right:6px; top:50%; transform:translateY(-50%); background:none; border:none;
+  color: var(--text-faint); font-size:15px; line-height:1; cursor:pointer; padding:6px; border-radius:50%;
+}
+.seance-sort-select{ flex:1; }
+.seance-list-row{ display:flex; align-items:center; gap:14px; padding:14px 0; border-top:1px solid var(--hairline); cursor:pointer; }
+.seance-list-row:first-child{ border-top:none; }
+.seance-list-date{ width:44px; flex-shrink:0; text-align:center; }
+.seance-list-date .sld-day{ font-family:'Fraunces',serif; font-size:20px; font-weight:500; line-height:1; }
+.seance-list-date .sld-month{ font-size:9px; text-transform:uppercase; color:var(--text-faint); letter-spacing:.06em; }
+.seance-list-body{ flex:1; min-width:0; }
+.seance-list-title{ font-size:13.5px; font-weight:600; margin-bottom:3px; }
+.seance-list-sub{ font-size:11.5px; color:var(--text-faint); }
+.seance-list-metrics{ display:flex; gap:10px; flex-shrink:0; }
+.seance-list-metric{ text-align:center; }
+.seance-list-metric .slm-val{ font-family:'IBM Plex Mono',monospace; font-size:12.5px; font-weight:600; }
+.seance-list-metric .slm-label{ font-size:8.5px; text-transform:uppercase; color:var(--text-faint); }
+.seance-list-row .chevron{ color: var(--text-faint); flex-shrink:0; }
+
+/* ---------- Séance : détail plein écran (style Whoop) ---------- */
+#seanceDetailOverlay{
+  position:fixed; inset:0; z-index:70; overflow-y:auto; -webkit-overflow-scrolling:touch;
+  background: var(--bg-glow), var(--bg); display:none;
+}
+#seanceDetailOverlay.open{ display:block; }
+.sd-topbar{
+  display:flex; align-items:center; justify-content:space-between;
+  max-width:520px; margin:0 auto; padding: calc(env(safe-area-inset-top) + 18px) 18px 8px;
+}
+.sd-icon-btn{
+  background: var(--surface-2); border:1px solid var(--hairline-strong); color: var(--text-dim);
+  width:36px; height:36px; border-radius:50%; cursor:pointer;
+  display:flex; align-items:center; justify-content:center; transition: border-color .2s, color .2s;
+}
+.sd-icon-btn:hover{ border-color: var(--gold); color: var(--gold); }
+.sd-hero-card{ text-align:center; }
+.sd-hero-type{ font-size:24px; font-weight:500; margin-top:2px; }
+.sd-ring-wrap{ position:relative; width:180px; height:180px; margin:22px auto 4px; }
+.sd-ring-wrap svg{ transform: rotate(-90deg); }
+.sd-ring-val{ position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+.sd-ring-val .num{ font-family:'Fraunces',serif; font-size:52px; font-weight:600; line-height:1; }
+.sd-ring-val .lbl{ font-size:11px; text-transform:uppercase; letter-spacing:.1em; color:var(--text-dim); margin-top:6px; }
+.sd-exo-text{ font-size:12.5px; color:var(--text-dim); line-height:1.6; white-space:pre-line; font-family:'IBM Plex Mono',monospace; }
+
 /* ---------- Vital delta & trend ---------- */
 .vital-delta{ font-size:9.5px; color:var(--text-faint); margin-top:3px; font-family:'IBM Plex Mono',monospace; }
 .trend-line{ font-size:12px; color:var(--text-dim); margin-top:10px; }
@@ -518,7 +570,7 @@ body{
     <br>
     <button id="pinSubmit" onclick="checkPin()">Déverrouiller</button>
     <div id="pinError"></div>
-    <div class="version-tag">v16.0</div>
+    <div class="version-tag">v17.0</div>
   </div>
 
   <div id="loadingState" style="display:none;">Chargement des données…</div>
@@ -694,6 +746,39 @@ body{
 
     </div>
 
+    <!-- ============ PAGE : SÉANCES ============ -->
+    <div class="page" id="page-seances">
+
+      <div class="card fade-in">
+        <p class="eyebrow"><span class="dot"></span>Filtrer &amp; trier</p>
+        <div class="seance-filter-row">
+          <div class="seance-filter-date-wrap">
+            <input type="date" id="seanceFilterDate" class="seance-filter-date" onchange="onSeanceFilterDateChange(this.value)">
+            <button class="seance-filter-clear" id="seanceFilterClearBtn" style="display:none;" onclick="clearSeanceFilterDate()" aria-label="Effacer le filtre">✕</button>
+          </div>
+          <select class="exo-select seance-sort-select" id="seanceSortSelect" onchange="setSeanceSort(this.value)">
+            <option value="date_desc">Plus récentes</option>
+            <option value="date_asc">Plus anciennes</option>
+            <option value="plaisir">Plaisir</option>
+            <option value="difficulte">Difficulté</option>
+            <option value="energie">Énergie</option>
+            <option value="fatigue_musc">Fatigue musculaire</option>
+            <option value="fatigue_nerv">Fatigue nerveuse</option>
+            <option value="strain">Strain</option>
+            <option value="calories">Calories</option>
+            <option value="duree">Durée</option>
+            <option value="tonnage">Tonnage</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="card fade-in">
+        <p class="eyebrow"><span class="dot"></span>Toutes les séances</p>
+        <div id="seancesListContent"></div>
+      </div>
+
+    </div>
+
     <!-- ============ PAGE : HISTORIQUE ============ -->
     <div class="page" id="page-history">
       <div class="card fade-in">
@@ -742,6 +827,18 @@ body{
   </div>
 </div>
 
+<div id="seanceDetailOverlay">
+  <div class="sd-topbar">
+    <button class="sd-icon-btn" onclick="closeSeanceDetail()" aria-label="Retour">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+    <button class="sd-icon-btn" onclick="shareSeanceCard()" aria-label="Partager la séance">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 12v7a2 2 0 002 2h12a2 2 0 002-2v-7M16 6l-4-4-4 4M12 2v14"/></svg>
+    </button>
+  </div>
+  <div class="wrap" id="seanceDetailContent"></div>
+</div>
+
 <div class="tabbar" id="tabbar" style="display:none;">
   <button class="tab-btn active" data-page="today" onclick="switchPage('today')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
@@ -754,6 +851,10 @@ body{
   <button class="tab-btn" data-page="week" onclick="switchPage('week')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/></svg>
     Sem.
+  </button>
+  <button class="tab-btn" data-page="seances" onclick="switchPage('seances')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9v6M2 10v4M7 7v10M17 7v10M20 10v4M22 9v6M7 12h10"/></svg>
+    Séan.
   </button>
   <button class="tab-btn" data-page="sante" onclick="switchPage('sante')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 8.5c0-2.5-2-4.5-4.5-4.5-1.6 0-3 .8-3.5 2-.5-1.2-1.9-2-3.5-2C6 4 4 6 4 8.5c0 5 8 10.5 8 10.5s8-5.5 8-10.5z"/></svg>
@@ -783,6 +884,9 @@ body{
 
 let LAST_DATA = null; // conservé en mémoire pour l'onglet Progression (pas de re-fetch au changement d'exercice)
 let selectedDate = null; // date affichée sur l'onglet Aujourd'hui (peut différer du vrai jour présent)
+let seanceFilterDate = null; // filtre date de l'onglet Séances
+let seanceSort = 'date_desc'; // tri courant de l'onglet Séances
+let openSeanceDate = null; // date de la séance actuellement ouverte dans le détail plein écran
 
 function changeSelectedDate(deltaDays){
   const candidate = addDays(selectedDate, deltaDays);
@@ -864,9 +968,9 @@ function countUp(el, target, decimals){
   }
   requestAnimationFrame(tick);
 }
-function setRing(circleId, pct){
+function setRing(circleId, pct, circumference){
+  circumference = circumference || 169.6;
   const c = document.getElementById(circleId);
-  const circumference = 169.6;
   const offset = circumference - (Math.max(0,Math.min(100,pct))/100) * circumference;
   requestAnimationFrame(() => { c.style.transition = 'stroke-dashoffset 1s cubic-bezier(.16,1,.3,1)'; c.style.strokeDashoffset = offset; });
 }
@@ -884,14 +988,16 @@ function toggleBilan(){
 // --- Pull to refresh + Swipe horizontal entre onglets ---
 let pullStartY = null;
 let swipeStartX = null, swipeStartY = null;
-const TAB_ORDER = ['today','morning','week','sante','progression','reference','history'];
+const TAB_ORDER = ['today','morning','week','seances','sante','progression','reference','history'];
 const pullIndicator = document.getElementById('pullIndicator');
 document.addEventListener('touchstart', e => {
+  if(document.getElementById('seanceDetailOverlay').classList.contains('open')) return;
   if(window.scrollY===0) pullStartY = e.touches[0].clientY;
   swipeStartX = e.touches[0].clientX;
   swipeStartY = e.touches[0].clientY;
 }, {passive:true});
 document.addEventListener('touchmove', e => {
+  if(document.getElementById('seanceDetailOverlay').classList.contains('open')) return;
   if(pullStartY===null) return;
   const dy = e.touches[0].clientY - pullStartY;
   if(dy>0 && window.scrollY===0){
@@ -902,6 +1008,7 @@ document.addEventListener('touchmove', e => {
   }
 }, {passive:true});
 document.addEventListener('touchend', e => {
+  if(document.getElementById('seanceDetailOverlay').classList.contains('open')) return;
   // Swipe horizontal → changer d'onglet
   if(swipeStartX!==null && e.changedTouches && e.changedTouches.length){
     const endX = e.changedTouches[0].clientX, endY = e.changedTouches[0].clientY;
@@ -944,6 +1051,8 @@ async function load(isManual){
     selectedDate = todayStr();
     renderToday(data);
     renderWeek(data);
+    renderSeancesList();
+    document.getElementById('seanceFilterDate').max = todayStr();
     renderHistory(data);
     renderHeatmap(data);
     renderSante(data);
@@ -1672,6 +1781,310 @@ function renderWeek(data){
   prList.innerHTML = prLines.length
     ? prLines.map(p=>`<div class="pr-chip"><span class="pr-medal">🏅</span><div class="pr-text"><b>${fmtDateLabel(p.date)}</b><br>${p.text}</div></div>`).join('')
     : '<div class="empty">Aucun record cette semaine</div>';
+}
+
+// --- Onglet Séances : liste filtrable/triable + détail plein écran style Whoop ---
+const SEANCE_SORT_KEYS = {
+  plaisir: 'Plaisir', difficulte: 'Difficulté', energie: 'Énergie',
+  fatigue_musc: 'Fatigue Musculaire', fatigue_nerv: 'Fatigue Nerveuse',
+  strain: 'Strain Séance', calories: 'Calories', duree: 'Durée (min)', tonnage: 'Tonnage Total'
+};
+
+function renderSeancesList(){
+  if(!LAST_DATA) return;
+  const seances = LAST_DATA.seances || [];
+  const filtered = seanceFilterDate ? seances.filter(s=>s['Date']===seanceFilterDate) : seances;
+
+  let sorted;
+  if(seanceSort==='date_desc') sorted = filtered.slice().sort((a,b)=> a['Date']<b['Date']?1:-1);
+  else if(seanceSort==='date_asc') sorted = filtered.slice().sort((a,b)=> a['Date']>b['Date']?1:-1);
+  else{
+    const key = SEANCE_SORT_KEYS[seanceSort];
+    sorted = filtered.slice().sort((a,b)=>{
+      const av = num(a[key]), bv = num(b[key]);
+      if(av===null && bv===null) return b['Date']>a['Date']?1:-1;
+      if(av===null) return 1;
+      if(bv===null) return -1;
+      if(bv!==av) return bv-av;
+      return a['Date']<b['Date']?1:-1;
+    });
+  }
+
+  const container = document.getElementById('seancesListContent');
+  if(!sorted.length){
+    container.innerHTML = `<div class="empty">Aucune séance ${seanceFilterDate?'pour cette date':'loggée'}</div>`;
+    return;
+  }
+  container.innerHTML = sorted.map(s=>{
+    const {day,month} = fmtShort(s['Date']);
+    return `<div class="seance-list-row" onclick="openSeanceDetail('${s['Date']}')">
+      <div class="seance-list-date"><div class="sld-day serif">${day}</div><div class="sld-month">${month}</div></div>
+      <div class="seance-list-body"><div class="seance-list-title">${s['Type']||'Séance'}</div><div class="seance-list-sub">${fmtDateLabel(s['Date'])}</div></div>
+      <div class="seance-list-metrics">
+        <div class="seance-list-metric"><div class="slm-val">${s['Strain Séance']||'—'}</div><div class="slm-label">Strain</div></div>
+        <div class="seance-list-metric"><div class="slm-val">${s['Calories']?Math.round(s['Calories']):'—'}</div><div class="slm-label">Kcal</div></div>
+        <div class="seance-list-metric"><div class="slm-val">${s['Durée (min)']?Math.round(s['Durée (min)']):'—'}</div><div class="slm-label">Min</div></div>
+      </div>
+      <svg class="chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg>
+    </div>`;
+  }).join('');
+}
+
+function onSeanceFilterDateChange(value){
+  seanceFilterDate = value || null;
+  document.getElementById('seanceFilterClearBtn').style.display = seanceFilterDate ? 'flex' : 'none';
+  renderSeancesList();
+}
+function clearSeanceFilterDate(){
+  seanceFilterDate = null;
+  document.getElementById('seanceFilterDate').value = '';
+  document.getElementById('seanceFilterClearBtn').style.display = 'none';
+  renderSeancesList();
+}
+function setSeanceSort(value){
+  seanceSort = value;
+  renderSeancesList();
+}
+
+function openSeanceDetail(dateStr){
+  if(!LAST_DATA) return;
+  const s = (LAST_DATA.seances||[]).find(x=>x['Date']===dateStr);
+  if(!s) return;
+  openSeanceDate = dateStr;
+
+  const strain = num(s['Strain Séance']);
+  const calories = num(s['Calories']);
+  const duree = num(s['Durée (min)']);
+  const tonnage = num(s['Tonnage Total']);
+
+  const meters = [
+    ['Plaisir', num(s['Plaisir']), 'var(--emerald)'],
+    ['Énergie', num(s['Énergie']), 'var(--blue)'],
+    ['Difficulté', num(s['Difficulté']), 'var(--gold)'],
+    ['Fatigue musculaire', num(s['Fatigue Musculaire']), 'var(--rust)'],
+    ['Fatigue nerveuse', num(s['Fatigue Nerveuse']), 'var(--rust)'],
+  ].filter(([,v])=>v!==null);
+
+  const metersHtml = meters.length ? `
+    <div class="card fade-in">
+      <p class="eyebrow"><span class="dot"></span>Ressenti</p>
+      <div class="score-breakdown">
+        ${meters.map(([label,val,color])=>`
+          <div>
+            <div class="score-item-head"><span class="si-label">${label}</span><span class="si-raw mono">${val}/10</span></div>
+            <div class="progress-track"><div class="progress-fill" style="width:${Math.max(0,Math.min(100,val*10))}%; background:${color};"></div></div>
+          </div>`).join('')}
+      </div>
+    </div>` : '';
+
+  const prHtml = (s['PRs'] && String(s['PRs']).trim()) ? `
+    <div class="card fade-in">
+      <p class="eyebrow"><span class="dot"></span>Records</p>
+      <div class="pr-list">
+        ${String(s['PRs']).split('\n').filter(l=>l.trim()).map(line=>`<div class="pr-chip"><span class="pr-medal">🏅</span><div class="pr-text">${line.replace(/^-\s*/,'')}</div></div>`).join('')}
+      </div>
+    </div>` : '';
+
+  const exoHtml = `
+    <div class="card fade-in">
+      <p class="eyebrow"><span class="dot"></span>Exercices</p>
+      <div class="sd-exo-text">${s['Détail Exercices'] || 'Détail non disponible'}</div>
+    </div>`;
+
+  document.getElementById('seanceDetailContent').innerHTML = `
+    <div class="card fade-in sd-hero-card">
+      <p class="eyebrow" style="justify-content:center;"><span class="dot"></span>${fmtDateLabel(dateStr)}</p>
+      <div class="sd-hero-type serif">${s['Type']||'Séance'}</div>
+      <div class="sd-ring-wrap">
+        <svg viewBox="0 0 120 120" width="180" height="180">
+          <circle cx="60" cy="60" r="52" fill="none" stroke="var(--surface-2)" stroke-width="10"/>
+          <circle id="sdStrainRing" cx="60" cy="60" r="52" fill="none" stroke="var(--gold)" stroke-width="10" stroke-linecap="round" stroke-dasharray="326.7" stroke-dashoffset="326.7"/>
+        </svg>
+        <div class="sd-ring-val">
+          <div class="num mono">${strain!==null?strain:'—'}</div>
+          <div class="lbl">Strain</div>
+        </div>
+      </div>
+    </div>
+    <div class="card fade-in">
+      <p class="eyebrow"><span class="dot"></span>Détails</p>
+      <div class="stat-grid">
+        <div class="stat"><div class="stat-val">${calories!==null?Math.round(calories):'—'}</div><div class="stat-label">Kcal</div></div>
+        <div class="stat"><div class="stat-val">${duree!==null?Math.round(duree):'—'}</div><div class="stat-label">Min</div></div>
+        <div class="stat"><div class="stat-val">${tonnage!==null?Math.round(tonnage):'—'}</div><div class="stat-label">Kg</div></div>
+      </div>
+    </div>
+    ${metersHtml}
+    ${prHtml}
+    ${exoHtml}`;
+
+  document.getElementById('seanceDetailOverlay').classList.add('open');
+  document.getElementById('seanceDetailOverlay').scrollTop = 0;
+  setRing('sdStrainRing', strain!==null ? (strain/21)*100 : 0, 326.7);
+}
+
+function closeSeanceDetail(){
+  document.getElementById('seanceDetailOverlay').classList.remove('open');
+  openSeanceDate = null;
+}
+
+function wrapCanvasLines(ctx, text, maxWidth){
+  const words = text.split(' ');
+  const lines = [];
+  let current = '';
+  words.forEach(word=>{
+    const test = current ? current + ' ' + word : word;
+    if(current && ctx.measureText(test).width > maxWidth){ lines.push(current); current = word; }
+    else current = test;
+  });
+  if(current) lines.push(current);
+  return lines;
+}
+
+async function shareSeanceCard(){
+  if(!LAST_DATA || !openSeanceDate) return;
+  const s = (LAST_DATA.seances||[]).find(x=>x['Date']===openSeanceDate);
+  if(!s) return;
+  await document.fonts.ready;
+
+  const strain = num(s['Strain Séance']);
+  const calories = num(s['Calories']);
+  const duree = num(s['Durée (min)']);
+  const tonnage = num(s['Tonnage Total']);
+  const meters = [
+    ['PLAISIR', num(s['Plaisir']), '#35D07F'],
+    ['ÉNERGIE', num(s['Énergie']), '#4FA9E8'],
+    ['DIFFICULTÉ', num(s['Difficulté']), '#FF7A1A'],
+    ['FATIGUE MUSC.', num(s['Fatigue Musculaire']), '#FF4B45'],
+    ['FATIGUE NERV.', num(s['Fatigue Nerveuse']), '#FF4B45'],
+  ].filter(([,v])=>v!==null);
+  const prLines = s['PRs'] ? String(s['PRs']).split('\n').map(l=>l.replace(/^-\s*/,'').trim()).filter(Boolean) : [];
+  const exoRaw = s['Détail Exercices'] ? String(s['Détail Exercices']).split('\n').map(l=>l.trim()).filter(Boolean) : [];
+
+  const W = 1080, MARGIN = 100;
+  const EXO_FONT = '400 20px "IBM Plex Mono", monospace';
+  const measureCanvas = document.createElement('canvas');
+  const mctx = measureCanvas.getContext('2d');
+  mctx.font = EXO_FONT;
+  const exoLines = [];
+  exoRaw.forEach(line => exoLines.push(...wrapCanvasLines(mctx, line, W - MARGIN*2)));
+
+  // --- Estimation de la hauteur nécessaire avant de créer le canvas définitif ---
+  const RING_R = 150, RING_GAP = 90, STATS_H = 90;
+  const METER_ROW_H = 56, PR_ROW_H = 46, EXO_ROW_H = 34;
+  let H = 380 + RING_R*2 + RING_GAP + STATS_H + 60;
+  if(meters.length) H += 90 + meters.length*METER_ROW_H;
+  if(prLines.length) H += 90 + prLines.length*PR_ROW_H;
+  if(exoLines.length) H += 110 + exoLines.length*EXO_ROW_H;
+  H += 110;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#050505'; ctx.fillRect(0,0,W,H);
+  const grad = ctx.createRadialGradient(540,-100,100,540,300,700);
+  grad.addColorStop(0,'rgba(255,122,26,0.22)'); grad.addColorStop(1,'rgba(255,122,26,0)');
+  ctx.fillStyle = grad; ctx.fillRect(0,0,W,700);
+
+  let y = 110;
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#FF7A1A';
+  ctx.font = '700 26px "Space Grotesk", sans-serif';
+  ctx.fillText('PERFORMANCE JOURNAL', W/2, y);
+
+  y += 58;
+  ctx.fillStyle = '#FFFFFF';
+  ctx.font = '500 44px "Fraunces", serif';
+  ctx.fillText(s['Type']||'Séance', W/2, y);
+
+  y += 40;
+  ctx.font = '500 24px "Space Grotesk", sans-serif'; ctx.fillStyle = '#9B9B9B';
+  ctx.fillText(fmtDateLabel(openSeanceDate), W/2, y);
+
+  const ringCx = W/2, ringCy = y + RING_R + 80;
+  ctx.beginPath(); ctx.arc(ringCx,ringCy,RING_R,0,Math.PI*2); ctx.strokeStyle='#1A1A1A'; ctx.lineWidth=18; ctx.stroke();
+  if(strain!==null){
+    const pct = Math.max(0,Math.min(1, strain/21));
+    ctx.beginPath(); ctx.arc(ringCx,ringCy,RING_R, -Math.PI/2, -Math.PI/2 + pct*Math.PI*2);
+    ctx.strokeStyle = '#FF7A1A'; ctx.lineWidth = 18; ctx.lineCap='round'; ctx.stroke();
+  }
+  ctx.textAlign='center';
+  ctx.font = '600 90px "Fraunces", serif'; ctx.fillStyle='#FFFFFF';
+  ctx.fillText(strain!==null?String(strain):'—', ringCx, ringCy+18);
+  ctx.font = '700 22px "Space Grotesk", sans-serif'; ctx.fillStyle='#9B9B9B';
+  ctx.fillText('STRAIN', ringCx, ringCy+54);
+
+  y = ringCy + RING_R + RING_GAP;
+
+  function drawStat(x, yy, label, value){
+    ctx.textAlign='center';
+    ctx.font = '600 40px "IBM Plex Mono", monospace'; ctx.fillStyle = '#FFFFFF';
+    ctx.fillText(value, x, yy);
+    ctx.font = '700 16px "Space Grotesk", sans-serif'; ctx.fillStyle = '#9B9B9B';
+    ctx.fillText(label, x, yy+30);
+  }
+  const col = [W*0.2, W*0.5, W*0.8];
+  drawStat(col[0], y, 'KCAL', calories!==null?String(Math.round(calories)):'—');
+  drawStat(col[1], y, 'MIN', duree!==null?String(Math.round(duree)):'—');
+  drawStat(col[2], y, 'KG TOTAL', tonnage!==null?String(Math.round(tonnage)):'—');
+  y += STATS_H - 30;
+
+  ctx.beginPath(); ctx.moveTo(MARGIN,y); ctx.lineTo(W-MARGIN,y); ctx.strokeStyle='rgba(255,255,255,0.08)'; ctx.lineWidth=1; ctx.stroke();
+
+  if(meters.length){
+    y += 60;
+    ctx.textAlign='left';
+    ctx.font = '700 30px "Fraunces", serif'; ctx.fillStyle = '#FFFFFF';
+    ctx.fillText('Ressenti', MARGIN, y);
+    y += 50;
+    meters.forEach(([label,val,color])=>{
+      ctx.font = '600 20px "Space Grotesk", sans-serif'; ctx.fillStyle = '#9B9B9B';
+      ctx.textAlign='left'; ctx.fillText(label, MARGIN, y);
+      ctx.textAlign='right'; ctx.fillStyle='#FFFFFF';
+      ctx.font = '600 20px "IBM Plex Mono", monospace';
+      ctx.fillText(`${val}/10`, W-MARGIN, y);
+      const barY = y+14, barW = W-MARGIN*2, barH=10;
+      ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fillRect(MARGIN, barY, barW, barH);
+      ctx.fillStyle = color; ctx.fillRect(MARGIN, barY, barW*Math.max(0,Math.min(1,val/10)), barH);
+      y += METER_ROW_H;
+    });
+  }
+
+  if(prLines.length){
+    y += 44;
+    ctx.textAlign='left';
+    ctx.font = '700 30px "Fraunces", serif'; ctx.fillStyle = '#FFFFFF';
+    ctx.fillText('Records', MARGIN, y);
+    y += 44;
+    ctx.font = '500 22px "Space Grotesk", sans-serif'; ctx.fillStyle = '#F5D26B';
+    prLines.forEach(line=>{ ctx.fillText('🏅 ' + line, MARGIN, y); y += PR_ROW_H; });
+  }
+
+  if(exoLines.length){
+    y += 64;
+    ctx.textAlign='left';
+    ctx.font = '700 30px "Fraunces", serif'; ctx.fillStyle = '#FFFFFF';
+    ctx.fillText('Exercices', MARGIN, y);
+    y += 44;
+    ctx.font = EXO_FONT; ctx.fillStyle = '#B8B8B8';
+    exoLines.forEach(line=>{ ctx.fillText(line, MARGIN, y); y += EXO_ROW_H; });
+  }
+
+  ctx.textAlign = 'center';
+  ctx.font='600 20px "Space Grotesk", sans-serif'; ctx.fillStyle='#545454';
+  ctx.fillText('performance-journal', W/2, H-50);
+
+  canvas.toBlob(blob=>{
+    const file = new File([blob], `seance-${openSeanceDate}.png`, { type:'image/png' });
+    if(navigator.canShare && navigator.canShare({ files:[file] })){
+      navigator.share({ files:[file], title:'Ma séance', text:`${s['Type']||'Séance'} du ${fmtDateLabel(openSeanceDate)}` }).catch(()=>{});
+    } else {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href=url; a.download=`seance-${openSeanceDate}.png`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+  }, 'image/png');
 }
 
 function toggleDay(dateKey){
