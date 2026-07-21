@@ -782,6 +782,8 @@ body{
     <!-- ============ PAGE : SEMAINE ============ -->
     <div class="page" id="page-week">
 
+      <div id="momentumContent"></div>
+
       <div class="card fade-in">
         <p class="eyebrow"><span class="dot"></span>Cette semaine</p>
         <div class="week-summary-grid">
@@ -795,7 +797,10 @@ body{
           <span><span class="lg-dot" style="background:var(--blue);"></span>Dépensé</span>
           <span><span class="lg-dot" style="background:var(--gold);"></span>Mangé</span>
         </div>
+        <div id="weekDayDetail"></div>
       </div>
+
+      <div id="weekComparisonContent"></div>
 
       <div class="card fade-in">
         <p class="eyebrow"><span class="dot"></span>Records personnels</p>
@@ -1704,19 +1709,154 @@ function renderHeaderExtras(data){
     line.textContent = `Dernière séance : ${last['Type']} · il y a ${daysAgo}j`;
   } else line.textContent = '';
 
-  // --- Streak (jours consécutifs avec repas loggés) ---
-  let streak = 0;
-  let checkDate = today;
-  if(!repasLog.some(r=>r['Date']===checkDate)) checkDate = addDays(today, -1);
-  while(repasLog.some(r=>r['Date']===checkDate)){
-    streak++;
-    checkDate = addDays(checkDate, -1);
-  }
+  // --- Streak (jours consécutifs avec au moins une action pertinente) ---
+  const streak = computeMomentumStreak(data);
   const badge = document.getElementById('streakBadge');
   if(streak>0){
     badge.style.display = 'flex';
     badge.innerHTML = `🔥 ${streak} jour${streak>1?'s':''} de suite`;
   } else badge.style.display = 'none';
+}
+
+// --- Momentum : série active, régularité, position dans la saison (données réellement chargées, jamais un faux percentile) ---
+function isActiveDay(data, d){
+  const whoop = data.whoop||[], health = data.health||[], seances = data.seances||[], repasLog = data.repas_log||[];
+  return seances.some(s=>s['Date']===d) || repasLog.some(r=>r['Date']===d) || whoop.some(w=>w['Date']===d) || health.some(h=>h['Date']===d);
+}
+function computeMomentumStreak(data){
+  const today = todayStr();
+  let streak = 0, checkDate = today;
+  if(!isActiveDay(data, checkDate)) checkDate = addDays(checkDate, -1);
+  while(isActiveDay(data, checkDate)){ streak++; checkDate = addDays(checkDate, -1); }
+  return streak;
+}
+function computeRegularity(data, windowDays, offsetDays){
+  const today = todayStr();
+  let activeCount = 0;
+  for(let i=0;i<windowDays;i++){
+    if(isActiveDay(data, addDays(today, -offsetDays-i))) activeCount++;
+  }
+  return (activeCount/windowDays)*100;
+}
+function getWeekBlocks(data){
+  const today = todayStr();
+  const allDates = [...(data.whoop||[]).map(w=>w['Date']), ...(data.seances||[]).map(s=>s['Date']), ...(data.repas_log||[]).map(r=>r['Date'])];
+  if(!allDates.length) return [];
+  const minDate = allDates.slice().sort()[0];
+  const totalDays = Math.floor((new Date(today+'T00:00:00') - new Date(minDate+'T00:00:00'))/86400000) + 1;
+  const nWeeks = Math.max(1, Math.floor(totalDays/7));
+  const blocks = [];
+  for(let w=0; w<nWeeks; w++){
+    const end = addDays(today, -7*w);
+    blocks.push({ start: addDays(end,-6), end });
+  }
+  return blocks;
+}
+// Indice composite volontairement limité à 3 axes bien définis (constance, récupération, sommeil) — "progression"
+// et "charge maîtrisée" n'ont pas de formule non ambiguë sans base arbitraire, on préfère ne pas les inventer.
+function computeWeekScore(data, start, end){
+  const whoop = (data.whoop||[]).filter(w=>w['Date']>=start && w['Date']<=end);
+  const seances = (data.seances||[]).filter(s=>s['Date']>=start && s['Date']<=end);
+  const repasLog = (data.repas_log||[]).filter(r=>r['Date']>=start && r['Date']<=end);
+  const activeDays = new Set([...whoop.map(w=>w['Date']), ...seances.map(s=>s['Date']), ...repasLog.map(r=>r['Date'])]).size;
+  const comps = [Math.min(1, activeDays/7)];
+  const recupVals = whoop.map(w=>num(w['Récupération %'])).filter(v=>v!==null);
+  if(recupVals.length) comps.push(recupVals.reduce((a,b)=>a+b,0)/recupVals.length/100);
+  const sommeilVals = whoop.map(w=>num(w['Sommeil Perf %'])).filter(v=>v!==null);
+  if(sommeilVals.length) comps.push(sommeilVals.reduce((a,b)=>a+b,0)/sommeilVals.length/100);
+  return { score: comps.reduce((a,b)=>a+b,0)/comps.length, activeDays, seances: seances.length };
+}
+function computeMomentum(data){
+  const streak = computeMomentumStreak(data);
+  const regCurrent = computeRegularity(data, 28, 0);
+  const regPrevious = computeRegularity(data, 28, 28);
+  const blocks = getWeekBlocks(data);
+  const scored = blocks.map(b=>({ ...b, ...computeWeekScore(data,b.start,b.end) }));
+  const sorted = scored.slice().sort((a,b)=>b.score-a.score);
+  const currentWeek = scored[0] || null;
+  const rank = currentWeek ? sorted.findIndex(w=>w.start===currentWeek.start) + 1 : null;
+  return { streak, regCurrent, regPrevious, weekRank: rank, weekTotal: scored.length, currentWeek };
+}
+function ordinalFr(n){ return n===1 ? '1re' : `${n}e`; }
+function renderMomentumCard(data){
+  const m = computeMomentum(data);
+  const regDelta = m.regPrevious>0 ? m.regCurrent-m.regPrevious : null;
+  const rankText = m.currentWeek ? `${ordinalFr(m.weekRank)} meilleure semaine sur ${m.weekTotal} chargée${m.weekTotal>1?'s':''}` : 'Pas assez de données';
+  return `<div class="card fade-in">
+    <p class="eyebrow"><span class="dot"></span>Momentum</p>
+    <div class="week-summary-grid" style="grid-template-columns:repeat(3,1fr);">
+      <div class="wsum"><div class="wsum-val serif">${m.streak}</div><div class="wsum-label">Série active</div></div>
+      <div class="wsum"><div class="wsum-val serif">${Math.round(m.regCurrent)}%</div><div class="wsum-label">Régularité 28j</div></div>
+      <div class="wsum"><div class="wsum-val serif">${m.weekRank||'—'}<span style="font-size:14px;">/${m.weekTotal}</span></div><div class="wsum-label">Rang semaine</div></div>
+    </div>
+    <div class="poids-note" style="margin-top:10px;">
+      ${regDelta!==null ? `Régularité ${regDelta>=0?'+':''}${regDelta.toFixed(0)} pts vs 28j précédents. ` : ''}${rankText} (constance, récupération, sommeil).
+    </div>
+  </div>`;
+}
+
+// --- Comparaison hebdomadaire (semaine glissante courante vs précédente, même convention que l'onglet Semaine) ---
+const WEEK_COMPARISON_METRICS = [
+  { key:'charge', label:'Charge totale (strain cumulé)', higherIsBetter:null, decimals:1 },
+  { key:'recup', label:'Récupération moyenne', higherIsBetter:true, decimals:0, unit:'%' },
+  { key:'sommeil', label:'Sommeil moyen', higherIsBetter:true, decimals:0, unit:'%' },
+  { key:'hrv', label:'HRV moyenne', higherIsBetter:true, decimals:0, unit:'ms' },
+  { key:'seances', label:'Séances', higherIsBetter:null, decimals:0 },
+  { key:'calories', label:'Calories consommées', higherIsBetter:null, decimals:0 },
+  { key:'balance', label:'Balance énergétique cumulée', higherIsBetter:null, decimals:0 },
+  { key:'regularite', label:'Régularité', higherIsBetter:true, decimals:0, unit:'%' }
+];
+function computeWeekMetrics(data, offsetDays){
+  const dates7 = Array.from({length:7}, (_,i)=> addDays(todayStr(), -offsetDays-6+i));
+  const whoop = (data.whoop||[]).filter(w=>dates7.includes(w['Date']));
+  const seances = (data.seances||[]).filter(s=>dates7.includes(s['Date']));
+  const mealsWeek = (data.repas_log||[]).filter(r=>dates7.includes(r['Date']));
+  const avg = (arr,key) => { const v = arr.map(x=>num(x[key])).filter(x=>x!==null); return v.length? v.reduce((a,b)=>a+b,0)/v.length : null; };
+  const totalDep = whoop.reduce((a,w)=>a+(num(w['Calories Jour'])||0),0);
+  const totalMange = mealsWeek.reduce((a,r)=>a+(num(r['Calories'])||0),0);
+  return {
+    charge: whoop.length ? whoop.reduce((a,w)=>a+(num(w['Strain Jour'])||0),0) : null,
+    recup: avg(whoop,'Récupération %'), sommeil: avg(whoop,'Sommeil Perf %'), hrv: avg(whoop,'VFC (HRV)'),
+    seances: seances.length,
+    calories: mealsWeek.length ? totalMange : null,
+    balance: (totalDep && mealsWeek.length) ? totalDep-totalMange : null,
+    regularite: computeRegularity(data,7,offsetDays)
+  };
+}
+function renderWeekComparisonCard(data){
+  const current = computeWeekMetrics(data, 0);
+  const previous = computeWeekMetrics(data, 7);
+  const rows = WEEK_COMPARISON_METRICS.map(m=>{
+    const cur = current[m.key], prev = previous[m.key];
+    if(cur===null) return `<div class="meas-row"><span class="meas-label">${m.label}</span><span class="meas-value">—</span></div>`;
+    const curTxt = Number.isInteger(cur) ? cur : cur.toFixed(m.decimals);
+    let deltaHtml = '';
+    if(prev!==null && prev!==0){
+      const delta = cur-prev, pct = (delta/Math.abs(prev))*100;
+      const color = m.higherIsBetter===null ? 'var(--text-faint)' : ((delta>=0)===m.higherIsBetter ? 'var(--emerald)' : 'var(--rust)');
+      deltaHtml = ` <span style="color:${color}; font-size:11px;">${delta>=0?'+':''}${delta.toFixed(1)} · ${pct>=0?'+':''}${pct.toFixed(0)}%</span>`;
+    }
+    return `<div class="meas-row"><span class="meas-label">${m.label}</span><span class="meas-value mono">${curTxt}${m.unit||''}${deltaHtml}</span></div>`;
+  }).join('');
+  return `<div class="card fade-in"><p class="eyebrow"><span class="dot"></span>Comparaison vs semaine précédente</p>${rows}</div>`;
+}
+
+function showWeekDayDetail(dateStr){
+  if(!LAST_DATA) return;
+  const whoop = LAST_DATA.whoop||[], seances = LAST_DATA.seances||[], repasLog = LAST_DATA.repas_log||[];
+  const w = whoop.find(x=>x['Date']===dateStr);
+  const s = seances.find(x=>x['Date']===dateStr);
+  const meals = repasLog.filter(r=>r['Date']===dateStr);
+  const totalCal = meals.reduce((a,m)=>a+(num(m['Calories'])||0),0);
+  let comment = 'Journée calme';
+  if(s && w && num(w['Strain Jour'])!==null && num(w['Strain Jour'])>=14) comment = 'Journée à forte charge';
+  else if(s) comment = 'Séance loggée';
+  else if(!w && !meals.length) comment = 'Aucune donnée';
+  document.getElementById('weekDayDetail').innerHTML = `
+    <div class="poids-note" style="margin-top:12px; padding-top:12px; border-top:1px solid var(--hairline);">
+      <b style="color:var(--text);">${fmtDateLabel(dateStr)}</b> — ${comment}<br>
+      Strain ${w && w['Strain Jour']!==''?w['Strain Jour']:'—'} · Séance ${s?s['Type']:'aucune'} · Récup. ${w && w['Récupération %']!==''?Math.round(w['Récupération %'])+'%':'—'} · ${meals.length?Math.round(totalCal)+' kcal mangées':'aucun repas loggé'}
+    </div>`;
 }
 
 // --- Parsing du détail d'exercices : "- Nom : NxR1/R2/... reps, charges C1kg/C2kg/..., total Tkg" ---
@@ -2493,6 +2633,10 @@ function renderWeek(data){
   const dates7 = Array.from({length:7}, (_,i) => todayStr(-6+i));
   const whoop = data.whoop||[], repasLog = data.repas_log||[], seances = data.seances||[], health = data.health||[];
 
+  document.getElementById('momentumContent').innerHTML = renderMomentumCard(data);
+  document.getElementById('weekComparisonContent').innerHTML = renderWeekComparisonCard(data);
+  document.getElementById('weekDayDetail').innerHTML = '';
+
   const seancesThisWeek = seances.filter(s => dates7.includes(s['Date']));
   document.getElementById('wSeances').textContent = seancesThisWeek.length;
 
@@ -2523,7 +2667,7 @@ function renderWeek(data){
     const dh = d.dep ? Math.max(4,(d.dep/maxVal)*90) : 4;
     const mh = d.mange ? Math.max(4,(d.mange/maxVal)*90) : 4;
     const lbl = new Intl.DateTimeFormat('fr-FR',{weekday:'narrow'}).format(new Date(d.date+'T00:00:00'));
-    return `<div class="day-col"><div class="bars"><div class="bar spent" style="height:${dh}px"></div><div class="bar eaten" style="height:${mh}px"></div></div><div class="day-label">${lbl}</div></div>`;
+    return `<div class="day-col" style="cursor:pointer;" onclick="showWeekDayDetail('${d.date}')"><div class="bars"><div class="bar spent" style="height:${dh}px"></div><div class="bar eaten" style="height:${mh}px"></div></div><div class="day-label">${lbl}</div></div>`;
   }).join('');
 
   const prList = document.getElementById('prList');
