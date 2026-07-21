@@ -417,11 +417,12 @@ body{
 .seance-list-row .chevron{ color: var(--text-faint); flex-shrink:0; }
 
 /* ---------- Séance : détail plein écran (style Whoop) ---------- */
-#seanceDetailOverlay{
+#seanceDetailOverlay, #exerciseDetailOverlay{
   position:fixed; inset:0; z-index:70; overflow-y:auto; -webkit-overflow-scrolling:touch;
   background: var(--bg-glow), var(--bg); display:none;
 }
-#seanceDetailOverlay.open{ display:block; }
+#exerciseDetailOverlay{ z-index:75; }
+#seanceDetailOverlay.open, #exerciseDetailOverlay.open{ display:block; }
 .sd-topbar{
   display:flex; align-items:center; justify-content:space-between;
   max-width:520px; margin:0 auto; padding: calc(env(safe-area-inset-top) + 18px) 18px 8px;
@@ -442,7 +443,7 @@ body{
 .sd-exo-text{ font-size:12.5px; color:var(--text-dim); line-height:1.6; white-space:pre-line; font-family:'IBM Plex Mono',monospace; }
 .sd-exo-card{ background: var(--surface-2); border-radius: var(--radius-md); margin-bottom:12px; }
 .sd-exo-card:last-child{ margin-bottom:0; }
-.sd-exo-head{ display:flex; align-items:center; gap:12px; padding:13px 14px; }
+.sd-exo-head{ display:flex; align-items:center; gap:12px; padding:13px 14px; cursor:pointer; }
 .sd-exo-avatar{ width:40px; height:40px; border-radius:10px; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
 .sd-exo-name{ flex:1; font-size:13.5px; font-weight:600; min-width:0; }
 .sd-exo-head .chevron{ color:var(--text-faint); flex-shrink:0; }
@@ -855,6 +856,15 @@ body{
   <div class="wrap" id="seanceDetailContent"></div>
 </div>
 
+<div id="exerciseDetailOverlay">
+  <div class="sd-topbar">
+    <button class="sd-icon-btn" onclick="closeExerciseDetail()" aria-label="Retour">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+  </div>
+  <div class="wrap" id="exerciseDetailContent"></div>
+</div>
+
 <div class="tabbar" id="tabbar" style="display:none;">
   <button class="tab-btn active" data-page="today" onclick="switchPage('today')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
@@ -973,6 +983,78 @@ function addDays(dateStr, delta){
 }
 function num(v){ const n = Number(v); return isNaN(n) ? null : n; }
 
+// ==================== Fondations partagées (v18) ====================
+// Persistance locale (préférences, brouillons, objectifs) — namespacée, jamais confondue avec les données Sheets.
+function lsGet(key, fallback){
+  try{ const raw = localStorage.getItem('pj_'+key); return raw===null ? fallback : JSON.parse(raw); }
+  catch(e){ return fallback; }
+}
+function lsSet(key, value){
+  try{ localStorage.setItem('pj_'+key, JSON.stringify(value)); }catch(e){}
+}
+
+// Moyenne + écart-type glissants sur une fenêtre de jours précédant refDate (baseline pour les deltas/signaux).
+function rollingBaseline(rows, valueField, refDate, windowDays, excludeRef){
+  excludeRef = excludeRef !== false;
+  const startDate = addDays(refDate, -windowDays);
+  const vals = rows.filter(r=>{
+    if(excludeRef && r['Date']===refDate) return false;
+    return r['Date'] > startDate && r['Date'] <= refDate && r[valueField]!=='' && r[valueField]!==undefined;
+  }).map(r=>num(r[valueField])).filter(v=>v!==null);
+  if(!vals.length) return null;
+  const avg = vals.reduce((a,b)=>a+b,0)/vals.length;
+  const variance = vals.reduce((a,v)=>a+(v-avg)**2,0)/vals.length;
+  return { avg, stddev: Math.sqrt(variance), n: vals.length };
+}
+
+function pearsonCorrelation(pairs){
+  const n = pairs.length;
+  if(n < 2) return null;
+  const xs = pairs.map(p=>p[0]), ys = pairs.map(p=>p[1]);
+  const mx = xs.reduce((a,b)=>a+b,0)/n, my = ys.reduce((a,b)=>a+b,0)/n;
+  let cov=0, dx=0, dy=0;
+  for(let i=0;i<n;i++){ const a=xs[i]-mx, b=ys[i]-my; cov+=a*b; dx+=a*a; dy+=b*b; }
+  const denom = Math.sqrt(dx*dy);
+  return { r: denom ? cov/denom : 0, n };
+}
+
+function normalizeSearchText(str){
+  return String(str).normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase();
+}
+function escAttr(str){
+  return String(str).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;');
+}
+
+// Estimation de charge maximale sur une répétition (formule d'Epley) — approximation, pas une mesure.
+function estimate1RM(charge, reps){
+  if(charge===null || reps===null || charge<=0 || reps<=0) return null;
+  if(reps===1) return charge;
+  return charge * (1 + reps/30);
+}
+
+// Classification exercice → groupe(s) musculaire(s), par reconnaissance de motifs sur le nom (pas une base
+// de données d'exercices). "Tirage" = mouvement de traction = Dos, même quand le nom contient "poitrine"
+// (le tirage "poitrine" désigne la trajectoire de la barre vers l'avant, pas le muscle ciblé).
+function classifyExerciseMuscles(name){
+  const n = normalizeSearchText(name);
+  if(/tirage|rameur buste|seated row|bent over row|pulldown|pull.?down|face pull|lat.?pull/.test(n))
+    return { primary:'Dos', secondary:['Bras'] };
+  if(/militaire|overhead|elevation laterale|epaule|shoulder|shrug|arnold/.test(n))
+    return { primary:'Épaules', secondary:['Bras'] };
+  if(/developpe couch|developpe inclin|bench|pompe|push.?up|ecarte|pec.?fly|chest fly|dips?/.test(n))
+    return { primary:'Pectoraux', secondary:['Épaules','Bras'] };
+  if(/curl|triceps|biceps/.test(n))
+    return { primary:'Bras', secondary:[] };
+  if(/squat|leg press|fente|lunge|souleve de terre|deadlift|terre roumain|good morning|hip thrust|glute|mollet|calf|ischio|quadriceps|fessier/.test(n))
+    return { primary:'Jambes', secondary:['Abdominaux'] };
+  if(/planche|plank|crunch|abdo|gainage|twist|deadbug|sit.?up|releve de jambes/.test(n))
+    return { primary:'Abdominaux', secondary:[] };
+  if(/^rameur$|^rowing$|corde a sauter|jump rope|bike erg|jumping jack|marche|course a pied|velo/.test(n))
+    return { primary:'Cardio', secondary:[] };
+  return { primary:'Autre', secondary:[] };
+}
+const MUSCLE_GROUPS_ORDER = ['Pectoraux','Dos','Épaules','Bras','Jambes','Abdominaux','Cardio','Autre'];
+
 function countUp(el, target, decimals){
   decimals = decimals || 0;
   const duration = 750; const t0 = performance.now();
@@ -1008,12 +1090,14 @@ const TAB_ORDER = ['today','morning','week','seances','sante','progression','ref
 const pullIndicator = document.getElementById('pullIndicator');
 document.addEventListener('touchstart', e => {
   if(document.getElementById('seanceDetailOverlay').classList.contains('open')) return;
+  if(document.getElementById('exerciseDetailOverlay').classList.contains('open')) return;
   if(window.scrollY===0) pullStartY = e.touches[0].clientY;
   swipeStartX = e.touches[0].clientX;
   swipeStartY = e.touches[0].clientY;
 }, {passive:true});
 document.addEventListener('touchmove', e => {
   if(document.getElementById('seanceDetailOverlay').classList.contains('open')) return;
+  if(document.getElementById('exerciseDetailOverlay').classList.contains('open')) return;
   if(pullStartY===null) return;
   const dy = e.touches[0].clientY - pullStartY;
   if(dy>0 && window.scrollY===0){
@@ -1025,6 +1109,7 @@ document.addEventListener('touchmove', e => {
 }, {passive:true});
 document.addEventListener('touchend', e => {
   if(document.getElementById('seanceDetailOverlay').classList.contains('open')) return;
+  if(document.getElementById('exerciseDetailOverlay').classList.contains('open')) return;
   // Swipe horizontal → changer d'onglet
   if(swipeStartX!==null && e.changedTouches && e.changedTouches.length){
     const endX = e.changedTouches[0].clientX, endY = e.changedTouches[0].clientY;
@@ -1059,7 +1144,7 @@ async function load(isManual){
   document.getElementById('app').style.display = 'none';
   document.getElementById('tabbar').style.display = 'none';
   try{
-    const res = await fetch(`${WEBAPP_URL}?secret=${encodeURIComponent(SECRET)}&days=30`);
+    const res = await fetch(`${WEBAPP_URL}?secret=${encodeURIComponent(SECRET)}&days=100`);
     if(!res.ok) throw new Error(`Réponse HTTP ${res.status}`);
     const data = await res.json();
     if(data.error) throw new Error(data.error);
@@ -1366,7 +1451,7 @@ function renderSeanceExercises(detailText){
     const totLeft = ex.isDuration ? formatSetDuration(ex.totalDurationSec) : ex.totalReps;
     return `
       <div class="sd-exo-card">
-        <div class="sd-exo-head">
+        <div class="sd-exo-head" data-exo-name="${escAttr(ex.name)}" onclick="openExerciseDetail(this.dataset.exoName)" role="button" tabindex="0">
           <div class="sd-exo-avatar" style="background:${style.bg};">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="${style.fg}" stroke-width="2">${EXO_AVATAR_ICON}</svg>
           </div>
@@ -1388,6 +1473,130 @@ function renderSeanceExercises(detailText){
   }).join('');
   const fallbackHtml = rawFallback.length ? `<div class="sd-exo-text">${rawFallback.join('\n')}</div>` : '';
   return cards + fallbackHtml;
+}
+
+// --- Fiche exercice (deep-dive) : agrège toutes les séances où cet exercice a été loggé ---
+function buildExerciseProfile(data, exerciseName){
+  const seances = (data.seances || []).slice().sort((a,b)=> a['Date']<b['Date']?-1:1);
+  const sessions = [];
+  seances.forEach(s=>{
+    if(!s['Détail Exercices']) return;
+    const { exercises } = parseSeanceExercises(s['Détail Exercices']);
+    const match = exercises.find(e=>e.name === exerciseName);
+    if(!match) return;
+    const chargesValid = match.sets.map(st=>st.charge).filter(c=>c!==null);
+    sessions.push({
+      date: s['Date'], sets: match.sets, isDuration: match.isDuration,
+      sessionTonnage: match.total,
+      sessionMaxCharge: chargesValid.length ? Math.max(...chargesValid) : null
+    });
+  });
+  if(!sessions.length) return null;
+
+  const referenceToday = todayStr();
+  const lastSession = sessions[sessions.length-1];
+  let best1RM=null, best1RMDate=null, bestVolume=null, bestVolumeDate=null, bestChargeEver=null, bestChargeDate=null;
+  sessions.forEach(sess=>{
+    sess.sets.forEach(st=>{
+      if(st.charge===null) return;
+      if(!sess.isDuration){
+        const oneRM = estimate1RM(st.charge, num(st.reps));
+        if(oneRM!==null && (best1RM===null || oneRM>best1RM)){ best1RM=oneRM; best1RMDate=sess.date; }
+      }
+      if(bestChargeEver===null || st.charge>bestChargeEver){ bestChargeEver=st.charge; bestChargeDate=sess.date; }
+    });
+    if(sess.sessionTonnage!==null && (bestVolume===null || sess.sessionTonnage>bestVolume)){ bestVolume=sess.sessionTonnage; bestVolumeDate=sess.date; }
+  });
+
+  function progressionOver(windowDays){
+    const cutoff = addDays(referenceToday, -windowDays);
+    const inWindow = sessions.filter(s=>s.date>cutoff && s.sessionMaxCharge!==null);
+    if(inWindow.length < 2) return null;
+    const first = inWindow[0].sessionMaxCharge, last = inWindow[inWindow.length-1].sessionMaxCharge;
+    return { first, last, delta: last-first, n: inWindow.length };
+  }
+
+  return {
+    name: exerciseName, muscles: classifyExerciseMuscles(exerciseName),
+    sessions, frequency: sessions.length, lastSession,
+    best1RM, best1RMDate, bestVolume, bestVolumeDate, bestChargeEver, bestChargeDate,
+    progression30: progressionOver(30), progression90: progressionOver(90)
+  };
+}
+
+let openExerciseName = null;
+function openExerciseDetail(name){
+  if(!LAST_DATA) return;
+  const profile = buildExerciseProfile(LAST_DATA, name);
+  if(!profile) return;
+  openExerciseName = name;
+
+  const style = EXO_CATEGORY_STYLE[categorizeExercise(profile.name)] || EXO_CATEGORY_STYLE['Autre'];
+  const muscleChips = [profile.muscles.primary, ...profile.muscles.secondary]
+    .map((m,i)=>`<span class="ressenti-chip">${i===0?'Principal':'Secondaire'} <b>${m}</b></span>`).join('');
+
+  const chargeSeries = profile.sessions.filter(s=>s.sessionMaxCharge!==null).map(s=>s.sessionMaxCharge);
+  const chartSvg = chargeSeries.length>=2 ? buildLineSVG(chargeSeries, 'var(--gold)', 320, 140, 10) : null;
+
+  function fmtDelta(prog, unit){
+    if(!prog) return '<div class="empty">Pas assez de séances sur cette période</div>';
+    const sign = prog.delta>=0?'+':'';
+    return `<div class="kv-row" style="font-size:14px;"><span>Sur ${prog.n} séances</span><span class="kv-val mono" style="color:${prog.delta>=0?'var(--emerald)':'var(--rust)'};">${sign}${prog.delta.toFixed(1)}${unit}</span></div>`;
+  }
+
+  const recentRows = profile.sessions.slice().reverse().slice(0,8).map(sess=>{
+    const setsTxt = sess.sets.map(st=> sess.isDuration ? st.duration : `${st.reps}×${st.charge!==null?st.charge+'kg':'PDC'}`).join(' · ');
+    return `<div class="mini-meal"><div class="mm-type">${fmtDateLabel(sess.date)}</div><div class="mm-desc">${setsTxt}</div><div class="mm-macros">${sess.sessionTonnage} kg au total</div></div>`;
+  }).join('');
+
+  document.getElementById('exerciseDetailContent').innerHTML = `
+    <div class="card fade-in sd-hero-card">
+      <p class="eyebrow" style="justify-content:center;"><span class="dot"></span>Fiche exercice</p>
+      <div class="sd-hero-type serif">${profile.name}</div>
+      <div class="ressenti-row" style="justify-content:center; margin-top:10px;">${muscleChips}</div>
+    </div>
+    <div class="card fade-in">
+      <p class="eyebrow"><span class="dot"></span>Records</p>
+      <div class="stat-grid">
+        <div class="stat"><div class="stat-val">${profile.bestChargeEver!==null?profile.bestChargeEver+'kg':'—'}</div><div class="stat-label">Charge max</div></div>
+        <div class="stat"><div class="stat-val">${profile.best1RM!==null?Math.round(profile.best1RM)+'kg':'—'}</div><div class="stat-label">1RM estimé</div></div>
+        <div class="stat"><div class="stat-val">${profile.bestVolume!==null?profile.bestVolume:'—'}</div><div class="stat-label">Meilleur volume</div></div>
+      </div>
+      <div class="poids-note" style="margin-top:10px;">
+        ${profile.bestChargeDate?`Charge max le ${fmtDateLabel(profile.bestChargeDate)}`:''}
+        ${profile.best1RMDate?` · 1RM estimé le ${fmtDateLabel(profile.best1RMDate)}`:''}
+      </div>
+    </div>
+    <div class="card fade-in">
+      <p class="eyebrow"><span class="dot"></span>Fréquence &amp; dernière exécution</p>
+      <div class="kv-row" style="font-size:14px;">
+        <span>Séances loggées <span class="kv-val mono">${profile.frequency}</span></span>
+        <span>Dernière fois <span class="kv-val mono">${fmtDateLabel(profile.lastSession.date)}</span></span>
+      </div>
+    </div>
+    <div class="card fade-in">
+      <p class="eyebrow"><span class="dot"></span>Progression</p>
+      <div class="progress-block" style="margin-top:0;">
+        <div class="progress-head"><span>30 derniers jours</span></div>
+        ${fmtDelta(profile.progression30,'kg')}
+      </div>
+      <div class="progress-block">
+        <div class="progress-head"><span>90 derniers jours</span></div>
+        ${fmtDelta(profile.progression90,'kg')}
+      </div>
+      ${chartSvg ? `<div class="chart-wrap">${chartSvg}</div>` : ''}
+    </div>
+    <div class="card fade-in">
+      <p class="eyebrow"><span class="dot"></span>Historique récent</p>
+      ${recentRows || '<div class="empty">Aucune séance</div>'}
+    </div>`;
+
+  document.getElementById('exerciseDetailOverlay').classList.add('open');
+  document.getElementById('exerciseDetailOverlay').scrollTop = 0;
+}
+function closeExerciseDetail(){
+  document.getElementById('exerciseDetailOverlay').classList.remove('open');
+  openExerciseName = null;
 }
 
 // --- Onglet Progression : sélection d'exercice, graphique de charge ---
@@ -1464,8 +1673,9 @@ function renderExoChart(){
   const chartWrap = document.getElementById('chartWrap');
   const chartStats = document.getElementById('chartStats');
   const entries = (window.EXO_INDEX && window.EXO_INDEX[name]) ? window.EXO_INDEX[name].slice().sort((a,b)=>a.date<b.date?-1:1) : [];
+  const fichebtn = `<button class="quick-btn emerald" style="width:100%; justify-content:center; margin-top:14px; cursor:pointer; border:1px solid var(--hairline-strong);" data-exo-name="${escAttr(name)}" onclick="openExerciseDetail(this.dataset.exoName)"><span class="dot"></span>Voir la fiche complète</button>`;
   if(entries.length < 2){
-    chartWrap.innerHTML = '<div class="chart-empty">Pas assez de séances loggées pour cet exercice</div>';
+    chartWrap.innerHTML = '<div class="chart-empty">Pas assez de séances loggées pour cet exercice</div>' + fichebtn;
     chartStats.innerHTML = '';
     return;
   }
@@ -1491,6 +1701,7 @@ function renderExoChart(){
     <span>Première : <b>${first}kg</b></span>
     <span>Dernière : <b>${last}kg</b></span>
     <span style="color:${gain>=0?'var(--emerald)':'var(--rust)'};">${gain>=0?'+':''}${gain.toFixed(1)}kg</span>`;
+  chartWrap.innerHTML += fichebtn;
 }
 
 function computeDayScore(dateStr, whoop, health, repasLog, seances){
