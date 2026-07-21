@@ -784,6 +784,11 @@ body.focus-mode #focusExitBtn{ display:flex !important; }
         <div id="macroGoalsContent"></div>
       </div>
 
+      <div class="card fade-in" id="mealRecoCard" style="display:none;">
+        <p class="eyebrow"><span class="dot"></span>Pour combler l'écart</p>
+        <div id="mealRecoContent"></div>
+      </div>
+
       <div class="card fade-in" id="bilanCard" style="display:none;">
         <div class="bilan-toggle" id="bilanToggle" onclick="toggleBilan()">
           <p class="eyebrow" style="margin:0;"><span class="dot"></span>Bilan IA du jour</p>
@@ -1031,9 +1036,16 @@ body.focus-mode #focusExitBtn{ display:flex !important; }
 </div>
 
 <script>
+// Heure locale Europe/Paris, robuste : évite Number(format(...)) qui casse selon les données ICU du navigateur
+// (certaines versions rendent "07 h" plutôt que "07", que Number() ne parse pas).
+function getParisHour(){
+  const parts = new Intl.DateTimeFormat('en-US', { hour:'numeric', hourCycle:'h23', timeZone:'Europe/Paris' }).formatToParts(new Date());
+  const hourPart = parts.find(p=>p.type==='hour');
+  return hourPart ? Number(hourPart.value) : new Date().getHours();
+}
 // --- Thème clair/sombre automatique selon l'heure (Europe/Paris) ---
 (function applyAutoTheme(){
-  const hour = Number(new Intl.DateTimeFormat('fr-FR',{hour:'2-digit',hour12:false,timeZone:'Europe/Paris'}).format(new Date()));
+  const hour = getParisHour();
   document.documentElement.setAttribute('data-theme', (hour>=7 && hour<19) ? 'light' : 'dark');
   document.documentElement.setAttribute('data-skin', 'flashy');
 })();
@@ -1807,6 +1819,61 @@ function renderMacroGoals(totalCal, totalProt, totalLipides, totalGlucides, isTr
     macroGoalRow('🥑','Lipides', totalLipides, MACRO_TARGETS.lipides, 'g');
 }
 
+// --- Suggestions de repas pour combler l'écart : tient compte des repas déjà loggés et de l'heure actuelle ---
+function detectMealSlot(typeRepas){
+  const t = normalizeSearchText(typeRepas||'');
+  if(/petit.?dej/.test(t)) return 'petit_dej';
+  if(/dejeuner/.test(t) && !/petit/.test(t)) return 'dejeuner';
+  if(/diner/.test(t)) return 'diner';
+  if(/collation|snack|encas/.test(t)) return 'collation';
+  return null;
+}
+const MEAL_SLOTS = [
+  { key:'petit_dej', label:'Petit-déjeuner', icon:'🍳', start:5, end:11 },
+  { key:'dejeuner', label:'Déjeuner', icon:'🥗', start:11, end:15 },
+  { key:'collation', label:'Collation', icon:'🍎', start:15, end:24 },
+  { key:'diner', label:'Dîner', icon:'🍽️', start:18, end:23 }
+];
+const MEAL_SLOTS_PRIMARY = ['petit_dej','dejeuner','diner'];
+function computeMealRecommendations(mealsToday, hour){
+  const loggedSlots = new Set(mealsToday.map(m=>detectMealSlot(m['Type Repas'])).filter(Boolean));
+  const candidates = MEAL_SLOTS.filter(slot => hour>=slot.start && hour<slot.end && !loggedSlots.has(slot.key));
+  const primaryCandidates = candidates.filter(c=>MEAL_SLOTS_PRIMARY.includes(c.key));
+  return primaryCandidates.length ? primaryCandidates : candidates;
+}
+function renderMealRecommendation(totalCal, totalProt, totalLipides, totalGlucides, targets, mealsToday, isToday){
+  const card = document.getElementById('mealRecoCard');
+  if(!isToday){ card.style.display = 'none'; return; }
+  card.style.display = 'block';
+
+  const hour = getParisHour();
+  const recs = computeMealRecommendations(mealsToday, hour);
+  const gapCal = Math.max(0, targets.calories-totalCal);
+  const gapProt = Math.max(0, targets.proteines-totalProt);
+  const gapGlu = Math.max(0, targets.glucides-totalGlucides);
+  const gapLip = Math.max(0, targets.lipides-totalLipides);
+  const allMet = gapCal<=0 && gapProt<=0 && gapGlu<=0 && gapLip<=0;
+
+  const el = document.getElementById('mealRecoContent');
+  if(allMet){
+    el.innerHTML = '<div class="empty">Objectifs du jour atteints 🎉</div>';
+    return;
+  }
+  const gapParts = [];
+  if(gapCal>0) gapParts.push(`<b class="mono" style="color:var(--text);">${Math.round(gapCal)}</b> kcal`);
+  if(gapProt>0) gapParts.push(`<b class="mono" style="color:var(--text);">${Math.round(gapProt)}</b>g protéines`);
+  if(gapGlu>0) gapParts.push(`<b class="mono" style="color:var(--text);">${Math.round(gapGlu)}</b>g glucides`);
+  if(gapLip>0) gapParts.push(`<b class="mono" style="color:var(--text);">${Math.round(gapLip)}</b>g lipides`);
+  const gapText = `Il reste ${gapParts.join(' · ')} à combler.`;
+
+  if(!recs.length){
+    el.innerHTML = `<div class="empty">Aucun repas pertinent à cette heure-ci.</div><div class="poids-note" style="margin-top:8px;">${gapText}</div>`;
+    return;
+  }
+  const chips = recs.map(r=>`<div class="ressenti-chip">${r.icon} <b>${r.label}</b></div>`).join('');
+  el.innerHTML = `<div class="ressenti-row">${chips}</div><div class="poids-note" style="margin-top:10px;">${gapText}</div>`;
+}
+
 function renderToday(data){
   const today = selectedDate;
   document.getElementById('dateLabel').textContent = fmtDateLabel(today);
@@ -1941,6 +2008,13 @@ function renderToday(data){
 
   const isTrainingDay = !!seanceToday;
   renderMacroGoals(totalCal, totalProt, totalLipides, totalGlucides, isTrainingDay);
+  const macroTargets = {
+    calories: isTrainingDay ? MACRO_TARGETS.caloriesMuscu : MACRO_TARGETS.caloriesRepos,
+    proteines: MACRO_TARGETS.proteines,
+    glucides: isTrainingDay ? MACRO_TARGETS.glucidesMuscu : MACRO_TARGETS.glucidesRepos,
+    lipides: MACRO_TARGETS.lipides
+  };
+  renderMealRecommendation(totalCal, totalProt, totalLipides, totalGlucides, macroTargets, mealsToday, today===todayStr());
 
   const depense = whoopToday ? num(whoopToday['Calories Jour']) : null;
   const mange = mealsToday.length ? totalCal : null;
