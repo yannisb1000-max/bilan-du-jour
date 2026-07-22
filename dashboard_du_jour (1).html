@@ -1819,7 +1819,7 @@ function renderMacroGoals(totalCal, totalProt, totalLipides, totalGlucides, isTr
     macroGoalRow('🥑','Lipides', totalLipides, MACRO_TARGETS.lipides, 'g');
 }
 
-// --- Suggestions de repas pour combler l'écart : tient compte des repas déjà loggés et de l'heure actuelle ---
+// --- Suggestions de repas pour combler l'écart : réparties sur les repas restants du jour, avec composition et heure idéale ---
 function detectMealSlot(typeRepas){
   const t = normalizeSearchText(typeRepas||'');
   if(/petit.?dej/.test(t)) return 'petit_dej';
@@ -1828,50 +1828,130 @@ function detectMealSlot(typeRepas){
   if(/collation|snack|encas/.test(t)) return 'collation';
   return null;
 }
+// Part de l'écart quotidien restant attribuée à chaque repas (par macro) — chaque colonne somme à 1
+// sur les 4 repas ; re-normalisée dynamiquement sur les seuls repas qui restent dans la journée.
 const MEAL_SLOTS = [
-  { key:'petit_dej', label:'Petit-déjeuner', icon:'🍳', start:5, end:11 },
-  { key:'dejeuner', label:'Déjeuner', icon:'🥗', start:11, end:15 },
-  { key:'collation', label:'Collation', icon:'🍎', start:15, end:24 },
-  { key:'diner', label:'Dîner', icon:'🍽️', start:18, end:23 }
+  { key:'petit_dej', label:'Petit-déjeuner', icon:'🍳', start:5, end:11, idealHour:8,    shareCal:0.25, shareProt:0.20, shareGlu:0.30, shareLip:0.20 },
+  { key:'dejeuner',  label:'Déjeuner',       icon:'🥗', start:11, end:15, idealHour:12.5, shareCal:0.35, shareProt:0.35, shareGlu:0.30, shareLip:0.30 },
+  { key:'collation', label:'Collation',      icon:'🍎', start:15, end:24, idealHour:16.5, shareCal:0.10, shareProt:0.10, shareGlu:0.10, shareLip:0.15 },
+  { key:'diner',     label:'Dîner',          icon:'🍽️', start:18, end:23, idealHour:19.5, shareCal:0.30, shareProt:0.35, shareGlu:0.30, shareLip:0.35 }
 ];
-const MEAL_SLOTS_PRIMARY = ['petit_dej','dejeuner','diner'];
-function computeMealRecommendations(mealsToday, hour){
+// Gabarits inspirés des repas déjà loggés (poulet/riz/légumes verts, cabillaud/pâtes/brocolis, noix/chocolat...)
+// pour rester cohérent avec l'alimentation réelle plutôt que proposer des aliments génériques.
+// maxGrams = portion réaliste maximale en une seule fois (évite les quantités absurdes quand l'écart alloué est très grand)
+const FOOD_DB = {
+  poulet:     { name:'Blanc de poulet',        cal:165, prot:31, glu:0,  lip:3.6, maxGrams:300 },
+  cabillaud:  { name:'Cabillaud',               cal:82,  prot:18, glu:0,  lip:0.7, maxGrams:300 },
+  oeufs:      { name:'Œufs',                    cal:155, prot:13, glu:1.1,lip:11,  maxGrams:180 },
+  skyr:       { name:'Skyr 0%',                 cal:57,  prot:11, glu:4,  lip:0.2, maxGrams:250 },
+  riz:        { name:'Riz cru',                 cal:365, prot:7,  glu:80, lip:0.6, maxGrams:150 },
+  avoine:     { name:"Flocons d'avoine",        cal:375, prot:13, glu:60, lip:7,   maxGrams:100 },
+  pates:      { name:'Spaghetti',                cal:350, prot:12, glu:70, lip:2,   maxGrams:150 },
+  banane:     { name:'Banane',                   cal:90,  prot:1,  glu:23, lip:0.3, maxGrams:250 },
+  haricots:   { name:'Haricots verts',          cal:30,  prot:2,  glu:5,  lip:0.2, maxGrams:300 },
+  brocolis:   { name:'Brocolis',                 cal:34,  prot:3,  glu:5,  lip:0.4, maxGrams:300 },
+  huileolive: { name:"Huile d'olive",           cal:900, prot:0,  glu:0,  lip:100, maxGrams:30 },
+  amandes:    { name:'Amandes',                  cal:600, prot:20, glu:20, lip:50,  maxGrams:50 },
+  chocolat:   { name:'Chocolat 100% cacao',      cal:600, prot:10, glu:20, lip:45,  maxGrams:40 }
+};
+const MEAL_TEMPLATES = {
+  petit_dej: { protein: FOOD_DB.oeufs,     carb: FOOD_DB.avoine, fat: FOOD_DB.amandes, veg: null },
+  dejeuner:  { protein: FOOD_DB.poulet,    carb: FOOD_DB.riz,    fat: FOOD_DB.huileolive, veg: FOOD_DB.haricots },
+  collation: { protein: FOOD_DB.skyr,      carb: FOOD_DB.banane, fat: FOOD_DB.chocolat, veg: null },
+  diner:     { protein: FOOD_DB.cabillaud, carb: FOOD_DB.pates,  fat: FOOD_DB.huileolive, veg: FOOD_DB.brocolis }
+};
+// Compose une proposition concrète (aliments + quantités) qui vise approximativement le target donné,
+// et renvoie aussi les totaux réels de cette composition (pas juste la cible) pour savoir "à combien on serait".
+function composeMeal(slotKey, target){
+  const tpl = MEAL_TEMPLATES[slotKey];
+  const picks = [];
+  const totals = { cal:0, prot:0, glu:0, lip:0 };
+  if(!tpl) return { picks, totals };
+  function addItem(food, grams){
+    grams = Math.max(0, Math.min(food.maxGrams||400, Math.round(grams/10)*10));
+    if(!food || grams<=0) return;
+    const factor = grams/100;
+    totals.cal += food.cal*factor; totals.prot += food.prot*factor; totals.glu += food.glu*factor; totals.lip += food.lip*factor;
+    picks.push({ name:food.name, grams });
+  }
+  if(tpl.protein && tpl.protein.prot>0) addItem(tpl.protein, (target.prot*0.85)/tpl.protein.prot*100);
+  if(tpl.carb && tpl.carb.glu>0) addItem(tpl.carb, (target.glu*0.85)/tpl.carb.glu*100);
+  if(tpl.veg) addItem(tpl.veg, 150);
+  const remLip = target.lip - totals.lip;
+  if(tpl.fat && tpl.fat.lip>0 && remLip>2) addItem(tpl.fat, (remLip/tpl.fat.lip)*100);
+  return { picks, totals };
+}
+// Repas pas encore loggés ET dont le créneau n'est pas encore complètement passé, triés chronologiquement.
+function computeRemainingSlotsToday(mealsToday, hour){
   const loggedSlots = new Set(mealsToday.map(m=>detectMealSlot(m['Type Repas'])).filter(Boolean));
-  const candidates = MEAL_SLOTS.filter(slot => hour>=slot.start && hour<slot.end && !loggedSlots.has(slot.key));
-  const primaryCandidates = candidates.filter(c=>MEAL_SLOTS_PRIMARY.includes(c.key));
-  return primaryCandidates.length ? primaryCandidates : candidates;
+  return MEAL_SLOTS.filter(slot => slot.end > hour && !loggedSlots.has(slot.key)).slice().sort((a,b)=>a.start-b.start);
+}
+// Répartit l'écart restant sur les repas qui restent dans la journée (jamais tout sur un seul repas).
+function allocateGapAcrossSlots(remainingSlots, gap){
+  const sums = { cal:0, prot:0, glu:0, lip:0 };
+  remainingSlots.forEach(s=>{ sums.cal+=s.shareCal; sums.prot+=s.shareProt; sums.glu+=s.shareGlu; sums.lip+=s.shareLip; });
+  return remainingSlots.map(s=>({
+    slot: s,
+    target: {
+      cal: sums.cal>0 ? gap.cal*(s.shareCal/sums.cal) : 0,
+      prot: sums.prot>0 ? gap.prot*(s.shareProt/sums.prot) : 0,
+      glu: sums.glu>0 ? gap.glu*(s.shareGlu/sums.glu) : 0,
+      lip: sums.lip>0 ? gap.lip*(s.shareLip/sums.lip) : 0
+    }
+  }));
+}
+// Une heure idéale déjà passée mais dont le créneau reste ouvert devient "maintenant" (jamais une heure dans le passé).
+function formatIdealTime(idealHour, currentHour){
+  if(idealHour <= currentHour) return 'maintenant';
+  const h = Math.floor(idealHour), m = Math.round((idealHour-h)*60);
+  return `${h}h${String(m).padStart(2,'0')}`;
 }
 function renderMealRecommendation(totalCal, totalProt, totalLipides, totalGlucides, targets, mealsToday, isToday){
   const card = document.getElementById('mealRecoCard');
   if(!isToday){ card.style.display = 'none'; return; }
   card.style.display = 'block';
+  const el = document.getElementById('mealRecoContent');
 
   const hour = getParisHour();
-  const recs = computeMealRecommendations(mealsToday, hour);
-  const gapCal = Math.max(0, targets.calories-totalCal);
-  const gapProt = Math.max(0, targets.proteines-totalProt);
-  const gapGlu = Math.max(0, targets.glucides-totalGlucides);
-  const gapLip = Math.max(0, targets.lipides-totalLipides);
-  const allMet = gapCal<=0 && gapProt<=0 && gapGlu<=0 && gapLip<=0;
-
-  const el = document.getElementById('mealRecoContent');
-  if(allMet){
+  const gap = {
+    cal: Math.max(0, targets.calories-totalCal),
+    prot: Math.max(0, targets.proteines-totalProt),
+    glu: Math.max(0, targets.glucides-totalGlucides),
+    lip: Math.max(0, targets.lipides-totalLipides)
+  };
+  if(gap.cal<=0 && gap.prot<=0 && gap.glu<=0 && gap.lip<=0){
     el.innerHTML = '<div class="empty">Objectifs du jour atteints 🎉</div>';
     return;
   }
-  const gapParts = [];
-  if(gapCal>0) gapParts.push(`<b class="mono" style="color:var(--text);">${Math.round(gapCal)}</b> kcal`);
-  if(gapProt>0) gapParts.push(`<b class="mono" style="color:var(--text);">${Math.round(gapProt)}</b>g protéines`);
-  if(gapGlu>0) gapParts.push(`<b class="mono" style="color:var(--text);">${Math.round(gapGlu)}</b>g glucides`);
-  if(gapLip>0) gapParts.push(`<b class="mono" style="color:var(--text);">${Math.round(gapLip)}</b>g lipides`);
-  const gapText = `Il reste ${gapParts.join(' · ')} à combler.`;
 
-  if(!recs.length){
-    el.innerHTML = `<div class="empty">Aucun repas pertinent à cette heure-ci.</div><div class="poids-note" style="margin-top:8px;">${gapText}</div>`;
+  const remaining = computeRemainingSlotsToday(mealsToday, hour);
+  if(!remaining.length){
+    el.innerHTML = `<div class="empty">Aucun repas restant pertinent aujourd'hui.</div><div class="poids-note" style="margin-top:8px;">Il reste ${Math.round(gap.cal)} kcal non couvertes par un repas prévu aujourd'hui.</div>`;
     return;
   }
-  const chips = recs.map(r=>`<div class="ressenti-chip">${r.icon} <b>${r.label}</b></div>`).join('');
-  el.innerHTML = `<div class="ressenti-row">${chips}</div><div class="poids-note" style="margin-top:10px;">${gapText}</div>`;
+
+  const allocations = allocateGapAcrossSlots(remaining, gap);
+  const primary = allocations[0];
+  const rest = allocations.slice(1);
+  const { picks, totals } = composeMeal(primary.slot.key, primary.target);
+  const idealTime = formatIdealTime(primary.slot.idealHour, hour);
+  const picksText = picks.length ? picks.map(p=>`${p.name} ${p.grams}g`).join(' + ') : 'Compose librement selon tes envies';
+
+  let html = `
+    <div class="ressenti-row">
+      <div class="ressenti-chip">${primary.slot.icon} <b>${primary.slot.label}</b></div>
+      <div class="ressenti-chip">🕒 <b>${idealTime}</b></div>
+    </div>
+    <div class="poids-note" style="margin-top:10px;">${picksText}</div>
+    <div class="poids-note" style="margin-top:4px;">≈ <b class="mono" style="color:var(--text);">${Math.round(totals.cal)}</b> kcal · <b class="mono" style="color:var(--text);">${Math.round(totals.prot)}</b>g P · <b class="mono" style="color:var(--text);">${Math.round(totals.glu)}</b>g G · <b class="mono" style="color:var(--text);">${Math.round(totals.lip)}</b>g L</div>`;
+
+  if(rest.length){
+    const restText = rest.map(a=>`${a.slot.icon} ${a.slot.label} (${formatIdealTime(a.slot.idealHour, hour)})`).join(' · ');
+    html += `<div class="poids-note" style="margin-top:10px; opacity:0.75;">Ensuite : ${restText}</div>`;
+  } else if(primary.target.cal>0 && totals.cal < primary.target.cal*0.7){
+    html += `<div class="poids-note" style="margin-top:10px; color:var(--rust);">C'est le dernier repas possible aujourd'hui et il ne suffira pas à combler tout l'écart à lui seul (portions plafonnées à des quantités réalistes).</div>`;
+  }
+  el.innerHTML = html;
 }
 
 function renderToday(data){
