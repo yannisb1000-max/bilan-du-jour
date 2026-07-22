@@ -2473,23 +2473,68 @@ function formatSetDuration(sec){
   return `${m}:${String(s).padStart(2,'0')}`;
 }
 function parseSeanceExerciseLine(line){
-  const m = line.trim().match(/^-\s*([^:]+?)\s*:\s*(\d+)x(.+?)(?:\s*reps)?,\s*charges\s+(.+?),\s*total\s+([\d.,]+)\s*kg\s*$/i);
-  if(!m) return null;
-  const name = m[1].trim();
-  const setsCount = parseInt(m[2], 10);
-  const repsOrDurRaw = m[3].trim();
-  const isDuration = repsOrDurRaw.includes(':');
-  const rawList = repsOrDurRaw.split('/').map(x=>x.trim());
-  const chargesList = m[4].split('/').map(c=>parseFrenchNum(c.replace(/kg/i,'').trim()));
-  const total = parseFrenchNum(m[5]);
-  const sets = Array.from({length:setsCount}, (_,i)=>({
-    reps: isDuration ? null : (rawList[i] ?? rawList[rawList.length-1] ?? null),
-    duration: isDuration ? (rawList[i] ?? rawList[rawList.length-1] ?? null) : null,
-    charge: chargesList[i] ?? chargesList[chargesList.length-1] ?? null
-  }));
-  const totalReps = isDuration ? null : sets.reduce((a,st)=>a+(parseFrenchNum(st.reps)||0),0);
-  const totalDurationSec = isDuration ? sets.reduce((a,st)=>a+parseSetDurationToSeconds(st.duration),0) : null;
-  return { name, setsCount, sets, isDuration, total, totalReps, totalDurationSec };
+  const head = line.trim().match(/^-\s*([^:]+?)\s*:\s*(.+)$/);
+  if(!head) return null;
+  const name = head[1].trim();
+  const rest = head[2].trim();
+  let m;
+
+  // Format « N séries (R1xC1kg, R2xC2kg, ...), FC moyenne .../... bpm, total Tkg » — charge/reps variables par série
+  m = rest.match(/^(\d+)\s*séries\s*\(([^)]*)\)\s*,\s*FC\s*moyenne\s+.+?\s*bpm\s*,\s*total\s+([\d.,]+)\s*kg\s*$/i);
+  if(m){
+    const setsCount = parseInt(m[1], 10);
+    // matchAll plutôt qu'un split sur la virgule : une charge décimale française ("52,5kg") contient
+    // elle-même une virgule, ce qui casserait la séparation entre séries si on splittait dessus.
+    const sets = [...m[2].matchAll(/(\d+)\s*x\s*([\d.,]+)\s*kg/gi)].map(sm=>(
+      { reps: parseInt(sm[1],10), duration: null, charge: parseFrenchNum(sm[2]) }
+    ));
+    const total = parseFrenchNum(m[3]);
+    const totalReps = sets.reduce((a,st)=>a+(st.reps||0),0);
+    return { name, setsCount, sets, isDuration:false, total, totalReps, totalDurationSec:null };
+  }
+
+  // Format durée : « Nxmm:ss, poids Ckg, FC moyenne .../... bpm, total mm:ss » — exercice au temps (gainage, planche...)
+  m = rest.match(/^(\d+)\s*x\s*(\d+:\d+)\s*,\s*poids\s+([\d.,]+)\s*kg\s*,\s*FC\s*moyenne\s+.+?\s*bpm\s*,\s*total\s+(\d+:\d+)\s*$/i);
+  if(m){
+    const setsCount = parseInt(m[1], 10);
+    const durationPerSet = m[2];
+    const charge = parseFrenchNum(m[3]);
+    const sets = Array.from({length:setsCount}, () => ({ reps:null, duration:durationPerSet, charge }));
+    const totalDurationSec = parseSetDurationToSeconds(m[4]);
+    return { name, setsCount, sets, isDuration:true, total: charge, totalReps:null, totalDurationSec };
+  }
+
+  // Format « NxR reps @ Ckg, FC moyenne .../... bpm, total Tkg » — reps et charge constantes sur toutes les séries
+  m = rest.match(/^(\d+)\s*x\s*(\d+)\s*reps\s*@\s*([\d.,]+)\s*kg\s*,\s*FC\s*moyenne\s+.+?\s*bpm\s*,\s*total\s+([\d.,]+)\s*kg\s*$/i);
+  if(m){
+    const setsCount = parseInt(m[1], 10);
+    const reps = parseInt(m[2], 10);
+    const charge = parseFrenchNum(m[3]);
+    const sets = Array.from({length:setsCount}, () => ({ reps, duration:null, charge }));
+    const total = parseFrenchNum(m[4]);
+    return { name, setsCount, sets, isDuration:false, total, totalReps: reps*setsCount, totalDurationSec:null };
+  }
+
+  // Repli : ancien format « NxR1/R2/... reps, charges C1kg/C2kg/...kg, total Tkg »
+  m = rest.match(/^(\d+)x(.+?)(?:\s*reps)?,\s*charges\s+(.+?),\s*total\s+([\d.,]+)\s*kg\s*$/i);
+  if(m){
+    const setsCount = parseInt(m[1], 10);
+    const repsOrDurRaw = m[2].trim();
+    const isDuration = repsOrDurRaw.includes(':');
+    const rawList = repsOrDurRaw.split('/').map(x=>x.trim());
+    const chargesList = m[3].split('/').map(c=>parseFrenchNum(c.replace(/kg/i,'').trim()));
+    const total = parseFrenchNum(m[4]);
+    const sets = Array.from({length:setsCount}, (_,i)=>({
+      reps: isDuration ? null : (rawList[i] ?? rawList[rawList.length-1] ?? null),
+      duration: isDuration ? (rawList[i] ?? rawList[rawList.length-1] ?? null) : null,
+      charge: chargesList[i] ?? chargesList[chargesList.length-1] ?? null
+    }));
+    const totalReps = isDuration ? null : sets.reduce((a,st)=>a+(parseFrenchNum(st.reps)||0),0);
+    const totalDurationSec = isDuration ? sets.reduce((a,st)=>a+parseSetDurationToSeconds(st.duration),0) : null;
+    return { name, setsCount, sets, isDuration, total, totalReps, totalDurationSec };
+  }
+
+  return null;
 }
 function parseSeanceExercises(detailText){
   if(!detailText) return { exercises: [], rawFallback: [] };
@@ -3415,9 +3460,9 @@ function openSeanceDetail(dateStr){
         <div class="stat"><div class="stat-val">${tonnage!==null?Math.round(tonnage):'—'}</div><div class="stat-label">Kg</div></div>
       </div>
     </div>
+    ${exoHtml}
     ${metersHtml}
-    ${prHtml}
-    ${exoHtml}`;
+    ${prHtml}`;
 
   document.getElementById('seanceDetailOverlay').classList.add('open');
   document.getElementById('seanceDetailOverlay').scrollTop = 0;
