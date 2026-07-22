@@ -2691,7 +2691,10 @@ function parseExerciseEntries(seances){
       const m = line.match(/^-\s*([^:]+?)\s*:\s*(.+)$/);
       if(!m) return;
       const name = m[1].trim();
-      const kgMatches = [...m[2].matchAll(/(\d+(?:[.,]\d+)?)\s*kg/gi)].map(x=>parseFloat(x[1].replace(',','.')));
+      const rest = m[2];
+      // retire "total X kg" avant d'extraire les charges, sinon le tonnage total est capturé comme charge max
+      const restSansTotal = rest.replace(/total\s*[:=]?\s*\d+(?:[.,]\d+)?\s*kg/gi, '');
+      const kgMatches = [...restSansTotal.matchAll(/(\d+(?:[.,]\d+)?)\s*kg/gi)].map(x=>parseFloat(x[1].replace(',','.')));
       if(!kgMatches.length) return;
       const maxKg = Math.max(...kgMatches);
       if(maxKg <= 0) return;
