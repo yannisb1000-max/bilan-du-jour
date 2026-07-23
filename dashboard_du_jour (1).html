@@ -610,7 +610,7 @@ body.focus-mode #focusExitBtn{ display:flex !important; }
     <br>
     <button id="pinSubmit" onclick="checkPin()">Déverrouiller</button>
     <div id="pinError"></div>
-    <div class="version-tag">v18.2</div>
+    <div class="version-tag">v18.3</div>
   </div>
 
   <div id="loadingState" style="display:none;">Chargement des données…</div>
@@ -2580,8 +2580,8 @@ function parseSeanceExerciseLine(line){
   const rest = head[2].trim();
   let m;
 
-  // Format « N séries (R1xC1kg, R2xC2kg, ...), FC moyenne .../... bpm, total Tkg » — charge/reps variables par série
-  m = rest.match(/^(\d+)\s*séries\s*\(([^)]*)\)\s*,\s*FC\s*moyenne\s+.+?\s*bpm\s*,\s*total\s+([\d.,]+)\s*kg\s*$/i);
+  // Format « N séries (R1xC1kg, R2xC2kg, ...), FC moy(enne) .../... bpm, total Tkg » — charge/reps variables par série
+  m = rest.match(/^(\d+)\s*séries\s*\(([^)]*)\)\s*,\s*FC\s*moy(?:enne)?\s+.+?\s*bpm\s*,\s*total\s+([\d.,]+)\s*kg\s*$/i);
   if(m){
     const setsCount = parseInt(m[1], 10);
     // matchAll plutôt qu'un split sur la virgule : une charge décimale française ("52,5kg") contient
@@ -2594,19 +2594,32 @@ function parseSeanceExerciseLine(line){
     return { name, setsCount, sets, isDuration:false, total, totalReps, totalDurationSec:null };
   }
 
-  // Format durée : « Nxmm:ss, poids Ckg, FC moyenne .../... bpm, total mm:ss » — exercice au temps (gainage, planche...)
-  m = rest.match(/^(\d+)\s*x\s*(\d+:\d+)\s*,\s*poids\s+([\d.,]+)\s*kg\s*,\s*FC\s*moyenne\s+.+?\s*bpm\s*,\s*total\s+(\d+:\d+)\s*$/i);
+  // Format durée : « Nxmm:ss, poids Ckg, FC moy(enne) .../... bpm, total mm:ss OU total Tkg » — exercice au temps
+  // (gainage, planche...) : le "total" du Sheet est parfois exprimé en durée, parfois en kg (souvent "0 kg" pour
+  // un exercice au poids du corps) — on ignore cette valeur et on recalcule la durée totale nous-même.
+  m = rest.match(/^(\d+)\s*x\s*(\d+:\d+)\s*,\s*poids\s+([\d.,]+)\s*kg\s*,\s*FC\s*moy(?:enne)?\s+.+?\s*bpm\s*,\s*total\s+(?:\d+:\d+|[\d.,]+\s*kg)\s*$/i);
   if(m){
     const setsCount = parseInt(m[1], 10);
     const durationPerSet = m[2];
     const charge = parseFrenchNum(m[3]);
     const sets = Array.from({length:setsCount}, () => ({ reps:null, duration:durationPerSet, charge }));
-    const totalDurationSec = parseSetDurationToSeconds(m[4]);
+    const totalDurationSec = setsCount * parseSetDurationToSeconds(durationPerSet);
     return { name, setsCount, sets, isDuration:true, total: charge, totalReps:null, totalDurationSec };
   }
 
-  // Format « NxR reps @ Ckg, FC moyenne .../... bpm, total Tkg » — reps et charge constantes sur toutes les séries
-  m = rest.match(/^(\d+)\s*x\s*(\d+)\s*reps\s*@\s*([\d.,]+)\s*kg\s*,\s*FC\s*moyenne\s+.+?\s*bpm\s*,\s*total\s+([\d.,]+)\s*kg\s*$/i);
+  // Format « NxR reps, poids Ckg, FC moy(enne) .../... bpm, total Tkg » — reps et charge (via "poids") constantes
+  m = rest.match(/^(\d+)\s*x\s*(\d+)\s*reps\s*,\s*poids\s+([\d.,]+)\s*kg\s*,\s*FC\s*moy(?:enne)?\s+.+?\s*bpm\s*,\s*total\s+([\d.,]+)\s*kg\s*$/i);
+  if(m){
+    const setsCount = parseInt(m[1], 10);
+    const reps = parseInt(m[2], 10);
+    const charge = parseFrenchNum(m[3]);
+    const sets = Array.from({length:setsCount}, () => ({ reps, duration:null, charge }));
+    const total = parseFrenchNum(m[4]);
+    return { name, setsCount, sets, isDuration:false, total, totalReps: reps*setsCount, totalDurationSec:null };
+  }
+
+  // Format « NxR reps @/à Ckg [texte libre, ex. "par bras"], FC moy(enne) .../... bpm, total Tkg »
+  m = rest.match(/^(\d+)\s*x\s*(\d+)\s*reps\s*(?:@|à)\s*([\d.,]+)\s*kg[^,]*,\s*FC\s*moy(?:enne)?\s+.+?\s*bpm\s*,\s*total\s+([\d.,]+)\s*kg\s*$/i);
   if(m){
     const setsCount = parseInt(m[1], 10);
     const reps = parseInt(m[2], 10);
