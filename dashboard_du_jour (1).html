@@ -610,7 +610,7 @@ body.focus-mode #focusExitBtn{ display:flex !important; }
     <br>
     <button id="pinSubmit" onclick="checkPin()">Déverrouiller</button>
     <div id="pinError"></div>
-    <div class="version-tag">v18.3</div>
+    <div class="version-tag">v18.4</div>
   </div>
 
   <div id="loadingState" style="display:none;">Chargement des données…</div>
@@ -1286,7 +1286,11 @@ function estimate1RM(charge, reps){
 // (le tirage "poitrine" désigne la trajectoire de la barre vers l'avant, pas le muscle ciblé).
 function classifyExerciseMuscles(name){
   const n = normalizeSearchText(name);
-  if(/tirage|rameur buste|seated row|bent over row|pulldown|pull.?down|face pull|lat.?pull/.test(n))
+  // Rameur "nu" (sans équipement/variante précisée) = machine cardio ; toute variante avec équipement
+  // ("– Barre", "– Haltère", "Un bras", "buste penché"...) = exercice de tirage pour le dos.
+  if(/^rameur$|^rowing$|corde a sauter|jump rope|bike erg|jumping jack|marche|course a pied|\bvelo\b/.test(n))
+    return { primary:'Cardio', secondary:[] };
+  if(/tirage|rameur|seated row|bent over row|pulldown|pull.?down|face pull|lat.?pull/.test(n))
     return { primary:'Dos', secondary:['Bras'] };
   if(/militaire|overhead|elevation laterale|epaule|shoulder|shrug|arnold/.test(n))
     return { primary:'Épaules', secondary:['Bras'] };
@@ -1298,8 +1302,6 @@ function classifyExerciseMuscles(name){
     return { primary:'Jambes', secondary:['Abdominaux'] };
   if(/planche|plank|crunch|abdo|gainage|twist|deadbug|sit.?up|releve de jambes/.test(n))
     return { primary:'Abdominaux', secondary:[] };
-  if(/^rameur$|^rowing$|corde a sauter|jump rope|bike erg|jumping jack|marche|course a pied|velo/.test(n))
-    return { primary:'Cardio', secondary:[] };
   return { primary:'Autre', secondary:[] };
 }
 const MUSCLE_GROUPS_ORDER = ['Pectoraux','Dos','Épaules','Bras','Jambes','Abdominaux','Cardio','Autre'];
