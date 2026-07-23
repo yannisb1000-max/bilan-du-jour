@@ -392,10 +392,23 @@ body.focus-mode #focusExitBtn{ display:flex !important; }
   background-repeat:no-repeat; background-position: right 14px center; background-size:16px;
 }
 .chart-wrap{ margin-top:20px; }
-.chart-wrap svg{ width:100%; height:180px; display:block; overflow:visible; }
 .chart-empty{ text-align:center; color:var(--text-faint); font-size:13px; padding:40px 0; }
 .chart-stats{ display:flex; justify-content:space-between; margin-top:14px; font-size:12px; color:var(--text-faint); }
 .chart-stats b{ color:var(--text); font-family:'IBM Plex Mono',monospace; }
+
+/* --- Graphe ligne interactif partagé (graduation + curseur de valeur au survol/glissement) --- */
+.lc-wrap{ position:relative; }
+.lc-svg{ width:100%; display:block; overflow:visible; touch-action:pan-y; cursor:crosshair; }
+.lc-grid{ stroke:var(--hairline); stroke-width:1; }
+.lc-gridlabel{ font-family:'IBM Plex Mono',monospace; font-size:9px; fill:var(--text-faint); }
+.lc-crosshair{ stroke:var(--text-faint); stroke-width:1; stroke-dasharray:3 3; pointer-events:none; }
+.lc-crossdot{ pointer-events:none; stroke:var(--surface); stroke-width:2; }
+.lc-tooltip{
+  position:absolute; top:0; left:0; transform:translate(-50%,-100%);
+  background:var(--surface-2); border:1px solid var(--hairline-strong); border-radius:8px;
+  padding:5px 9px; font-family:'IBM Plex Mono',monospace; font-size:11.5px; font-weight:600; color:var(--text);
+  white-space:nowrap; pointer-events:none; opacity:0; transition:opacity .1s ease; z-index:5;
+}
 
 /* ---------- Séances (onglet liste) ---------- */
 .seance-filter-row{ display:flex; gap:10px; }
@@ -505,7 +518,6 @@ body.focus-mode #focusExitBtn{ display:flex !important; }
 .ref-empty{ text-align:center; padding:60px 20px; color:var(--text-faint); font-size:14px; line-height:1.6; }
 
 /* ---------- Santé ---------- */
-.health-chart-svg{ width:100%; height:100px; display:block; overflow:visible; margin-top:14px; }
 .health-stats-row{ display:flex; justify-content:space-between; font-size:11px; color:var(--text-faint); margin-top:8px; }
 .health-stats-row b{ color:var(--text); font-family:'IBM Plex Mono',monospace; font-weight:700; }
 .health-empty{ text-align:center; color:var(--text-faint); font-size:13px; padding:20px 0; }
@@ -598,7 +610,7 @@ body.focus-mode #focusExitBtn{ display:flex !important; }
     <br>
     <button id="pinSubmit" onclick="checkPin()">Déverrouiller</button>
     <div id="pinError"></div>
-    <div class="version-tag">v18.1</div>
+    <div class="version-tag">v18.2</div>
   </div>
 
   <div id="loadingState" style="display:none;">Chargement des données…</div>
@@ -1139,6 +1151,95 @@ function lsGet(key, fallback){
 }
 function lsSet(key, value){
   try{ localStorage.setItem('pj_'+key, JSON.stringify(value)); }catch(e){}
+}
+
+// --- Graphe ligne interactif partagé : graduation Y avec valeurs + curseur (souris : survol, tactile : glisser)
+// affichant la valeur précise du point le plus proche. Utilisé par tous les graphes de tendance de l'app.
+let LC_SEQ = 0;
+function lineChart(points, opts){
+  opts = opts || {};
+  const w = opts.w || 320, h = opts.h || 160, pad = opts.pad != null ? opts.pad : 10;
+  const padLeft = opts.padLeft != null ? opts.padLeft : 34;
+  const color = opts.color || 'var(--gold)';
+  const decimals = opts.decimals != null ? opts.decimals : 0;
+  const unit = opts.unit || '';
+  const gridLines = opts.gridLines != null ? opts.gridLines : 4;
+  const dotRadius = opts.dotRadius || 3;
+  const id = 'lc' + (LC_SEQ++);
+
+  const values = points.map(p=>p.value);
+  const min = Math.min(...values), max = Math.max(...values);
+  const range = (max-min) || 1;
+  const plotW = w - padLeft - pad;
+  const plotH = h - pad*2;
+
+  const xy = points.map((p,i)=>{
+    const x = padLeft + (points.length>1 ? (i/(points.length-1)) : 0) * plotW;
+    const y = pad + plotH - ((p.value-min)/range) * plotH;
+    return { x, y, date: p.date, value: p.value };
+  });
+
+  const ptsStr = xy.map(p=>`${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+  const dots = xy.map(p=>`<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${dotRadius}" fill="${color}"/>`).join('');
+
+  let gridHtml = '';
+  for(let i=0;i<gridLines;i++){
+    const frac = gridLines===1 ? 1 : i/(gridLines-1);
+    const val = min + frac*range;
+    const y = pad + plotH - frac*plotH;
+    gridHtml += `<line x1="${padLeft}" y1="${y.toFixed(1)}" x2="${w-pad}" y2="${y.toFixed(1)}" class="lc-grid"/>`;
+    gridHtml += `<text x="${(padLeft-8).toFixed(1)}" y="${y.toFixed(1)}" class="lc-gridlabel" text-anchor="end" dominant-baseline="middle">${val.toFixed(decimals)}${unit}</text>`;
+  }
+
+  const html = `<div class="lc-wrap"${opts.wrapStyle ? ` style="${opts.wrapStyle}"` : ''}>
+    <svg class="lc-svg" id="${id}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="height:${h}px;">
+      ${gridHtml}
+      <polyline points="${ptsStr}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      ${dots}
+      <line id="${id}-cross" x1="${xy[0].x.toFixed(1)}" y1="${pad}" x2="${xy[0].x.toFixed(1)}" y2="${(h-pad).toFixed(1)}" class="lc-crosshair" style="opacity:0;"/>
+      <circle id="${id}-crossdot" cx="${xy[0].x.toFixed(1)}" cy="${xy[0].y.toFixed(1)}" r="${dotRadius+1.5}" class="lc-crossdot" style="opacity:0;" fill="${color}"/>
+    </svg>
+    <div id="${id}-tooltip" class="lc-tooltip"></div>
+  </div>`;
+
+  return { html, mount: () => initLineChart(id, xy, { w, decimals, unit }) };
+}
+
+function initLineChart(id, xy, cfg){
+  const svg = document.getElementById(id);
+  const tooltip = document.getElementById(id+'-tooltip');
+  const cross = document.getElementById(id+'-cross');
+  const crossDot = document.getElementById(id+'-crossdot');
+  if(!svg || !tooltip || !cross || !crossDot) return;
+  let dragging = false;
+
+  function nearestPoint(clientX){
+    const rect = svg.getBoundingClientRect();
+    const relX = rect.width ? Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)) : 0;
+    const svgX = relX * cfg.w;
+    let best = xy[0], bestDist = Infinity;
+    xy.forEach(p=>{ const d = Math.abs(p.x - svgX); if(d < bestDist){ bestDist = d; best = p; } });
+    return best;
+  }
+  function show(clientX){
+    const p = nearestPoint(clientX);
+    cross.setAttribute('x1', p.x); cross.setAttribute('x2', p.x);
+    crossDot.setAttribute('cx', p.x); crossDot.setAttribute('cy', p.y);
+    cross.style.opacity = '1'; crossDot.style.opacity = '1';
+    const d = p.date ? fmtShort(p.date) : null;
+    tooltip.innerHTML = `${d ? `<span style="color:var(--text-faint); font-weight:500;">${d.day} ${d.month}</span> ` : ''}${p.value.toFixed(cfg.decimals)}${cfg.unit}`;
+    const pct = (p.x / cfg.w) * 100;
+    tooltip.style.left = pct + '%';
+    tooltip.style.opacity = '1';
+    tooltip.style.transform = pct > 70 ? 'translate(-100%,-100%)' : pct < 30 ? 'translate(0,-100%)' : 'translate(-50%,-100%)';
+  }
+  function hide(){ cross.style.opacity='0'; crossDot.style.opacity='0'; tooltip.style.opacity='0'; }
+
+  svg.addEventListener('pointerdown', e=>{ dragging = true; try{ svg.setPointerCapture(e.pointerId); }catch(err){} show(e.clientX); });
+  svg.addEventListener('pointermove', e=>{ if(e.pointerType==='mouse' || dragging) show(e.clientX); });
+  svg.addEventListener('pointerup', e=>{ dragging = false; if(e.pointerType!=='mouse') hide(); });
+  svg.addEventListener('pointercancel', ()=>{ dragging = false; hide(); });
+  svg.addEventListener('pointerleave', ()=>{ if(!dragging) hide(); });
 }
 
 // Moyenne + écart-type glissants sur une fenêtre de jours précédant refDate (baseline pour les deltas/signaux).
@@ -2002,12 +2103,12 @@ function renderToday(data){
   } else { poidsVal.textContent='—'; poidsNote.textContent='Aucune donnée disponible'; }
 
   const poidsSeries = health.filter(r=>r['Poids']!=='' && r['Poids']!==undefined).map(r=>num(r['Poids']));
+  const poidsPoints = health.filter(r=>r['Poids']!=='' && r['Poids']!==undefined).map(r=>({ date:r['Date'], value:num(r['Poids']) }));
   const sparkWrap = document.getElementById('sparklineWrap');
-  if(poidsSeries.length>=2){
-    const w=300,h=40,pad=3, min=Math.min(...poidsSeries), max=Math.max(...poidsSeries), range=(max-min)||1;
-    const pts = poidsSeries.map((v,i)=>{ const x=pad+(i/(poidsSeries.length-1))*(w-pad*2); const y=h-pad-((v-min)/range)*(h-pad*2); return `${x.toFixed(1)},${y.toFixed(1)}`; }).join(' ');
-    const last = pts.split(' ').pop().split(',');
-    sparkWrap.innerHTML = `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><polyline points="${pts}" fill="none" stroke="#D8A85A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="${last[0]}" cy="${last[1]}" r="3" fill="#D8A85A"/></svg>`;
+  if(poidsPoints.length>=2){
+    const spark = lineChart(poidsPoints, { w:300, h:40, pad:4, padLeft:26, gridLines:2, color:'#D8A85A', decimals:1, unit:'kg', dotRadius:2.5 });
+    sparkWrap.innerHTML = spark.html;
+    spark.mount();
   } else sparkWrap.innerHTML = '';
 
   // --- Tendance de poids (régression linéaire simple sur les points disponibles) ---
@@ -2929,29 +3030,17 @@ function renderExoChart(){
     chartStats.innerHTML = '';
     return;
   }
-  const w=320,h=160,pad=10;
-  const kgs = entries.map(e=>e.kg);
-  const min = Math.min(...kgs), max = Math.max(...kgs), range=(max-min)||1;
-  const pts = entries.map((e,i)=>{
-    const x = pad + (i/(entries.length-1))*(w-pad*2);
-    const y = h-pad - ((e.kg-min)/range)*(h-pad*2);
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  }).join(' ');
-  const dots = entries.map((e,i)=>{
-    const [x,y] = pts.split(' ')[i].split(',');
-    return `<circle cx="${x}" cy="${y}" r="3.5" fill="var(--gold)"/>`;
-  }).join('');
-  chartWrap.innerHTML = `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
-    <polyline points="${pts}" fill="none" stroke="var(--gold)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-    ${dots}
-  </svg>`;
+  const chart = lineChart(entries.map(e=>({ date: e.date, value: e.kg })), { color:'var(--gold)', decimals:1, unit:'kg' });
+  chartWrap.innerHTML = chart.html + fichebtn;
+  chart.mount();
   const first = entries[0].kg, last = entries[entries.length-1].kg;
+  const maxKg = Math.max(...entries.map(e=>e.kg));
   const gain = last - first;
   chartStats.innerHTML = `
     <span>Première : <b>${first}kg</b></span>
     <span>Dernière : <b>${last}kg</b></span>
+    <span>Max : <b>${maxKg}kg</b></span>
     <span style="color:${gain>=0?'var(--emerald)':'var(--rust)'};">${gain>=0?'+':''}${gain.toFixed(1)}kg</span>`;
-  chartWrap.innerHTML += fichebtn;
 }
 
 function computeDayScore(dateStr, whoop, health, repasLog, seances){
@@ -3803,32 +3892,24 @@ function renderMorning(data){
   container.innerHTML = recupCard + sleepCard + measCard;
 }
 
-function buildLineSVG(values, colorHex, w, h, pad){
-  w=w||320; h=h||100; pad=pad||8;
-  if(values.length<2) return null;
-  const min=Math.min(...values), max=Math.max(...values), range=(max-min)||1;
-  const pts = values.map((v,i)=>{ const x=pad+(i/(values.length-1))*(w-pad*2); const y=h-pad-((v-min)/range)*(h-pad*2); return [x,y]; });
-  const ptsStr = pts.map(p=>`${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ');
-  const last = pts[pts.length-1];
-  return `<svg class="health-chart-svg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><polyline points="${ptsStr}" fill="none" stroke="${colorHex}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="${last[0]}" cy="${last[1]}" r="3.5" fill="${colorHex}"/></svg>`;
-}
-
-function healthChartCard(label, source, values, colorHex, decimals, unit){
+function healthChartCard(label, source, points, colorHex, decimals, unit){
   decimals = decimals || 0; unit = unit || '';
-  if(values.length < 2){
-    return `<div class="card fade-in"><p class="eyebrow"><span class="dot"></span>${label} <span style="font-weight:400; color:var(--text-faint); text-transform:none; letter-spacing:0; font-size:10.5px;">· ${source}</span></p><div class="health-empty">Pas assez de données</div></div>`;
+  if(points.length < 2){
+    return { html: `<div class="card fade-in"><p class="eyebrow"><span class="dot"></span>${label} <span style="font-weight:400; color:var(--text-faint); text-transform:none; letter-spacing:0; font-size:10.5px;">· ${source}</span></p><div class="health-empty">Pas assez de données</div></div>`, mount: ()=>{} };
   }
-  const svg = buildLineSVG(values, colorHex);
+  const chart = lineChart(points, { h:100, color: colorHex, decimals, unit, wrapStyle:'margin-top:14px;' });
+  const values = points.map(p=>p.value);
   const min = Math.min(...values), max = Math.max(...values), last = values[values.length-1];
-  return `<div class="card fade-in">
+  const html = `<div class="card fade-in">
     <p class="eyebrow"><span class="dot" style="background:${colorHex};"></span>${label} <span style="font-weight:400; color:var(--text-faint); text-transform:none; letter-spacing:0; font-size:10.5px;">· ${source}</span></p>
-    ${svg}
+    ${chart.html}
     <div class="health-stats-row">
       <span>Min <b>${min.toFixed(decimals)}${unit}</b></span>
       <span>Actuel <b>${last.toFixed(decimals)}${unit}</b></span>
       <span>Max <b>${max.toFixed(decimals)}${unit}</b></span>
     </div>
   </div>`;
+  return { html, mount: chart.mount };
 }
 
 // --- Corrélation sommeil / performance : Pearson réel, jamais présenté comme causalité ---
@@ -3993,22 +4074,27 @@ function renderSante(data){
   const whoop = data.whoop || [], health = data.health || [];
   const container = document.getElementById('santeContent');
 
-  const poids = health.filter(h=>h['Poids']!=='' && h['Poids']!==undefined).map(h=>num(h['Poids']));
-  const img = health.filter(h=>h['IMG']!=='' && h['IMG']!==undefined).map(h=>num(h['IMG']));
-  const recup = whoop.filter(w=>w['Récupération %']!=='' && w['Récupération %']!==undefined).map(w=>num(w['Récupération %']));
-  const strain = whoop.filter(w=>w['Strain Jour']!=='' && w['Strain Jour']!==undefined).map(w=>num(w['Strain Jour']));
-  const sommeil = whoop.filter(w=>w['Sommeil Perf %']!=='' && w['Sommeil Perf %']!==undefined).map(w=>num(w['Sommeil Perf %']));
-  const hrv = whoop.filter(w=>w['VFC (HRV)']!=='' && w['VFC (HRV)']!==undefined).map(w=>num(w['VFC (HRV)']));
+  const poids = health.filter(h=>h['Poids']!=='' && h['Poids']!==undefined).map(h=>({ date:h['Date'], value:num(h['Poids']) }));
+  const img = health.filter(h=>h['IMG']!=='' && h['IMG']!==undefined).map(h=>({ date:h['Date'], value:num(h['IMG']) }));
+  const recup = whoop.filter(w=>w['Récupération %']!=='' && w['Récupération %']!==undefined).map(w=>({ date:w['Date'], value:num(w['Récupération %']) }));
+  const strain = whoop.filter(w=>w['Strain Jour']!=='' && w['Strain Jour']!==undefined).map(w=>({ date:w['Date'], value:num(w['Strain Jour']) }));
+  const sommeil = whoop.filter(w=>w['Sommeil Perf %']!=='' && w['Sommeil Perf %']!==undefined).map(w=>({ date:w['Date'], value:num(w['Sommeil Perf %']) }));
+  const hrv = whoop.filter(w=>w['VFC (HRV)']!=='' && w['VFC (HRV)']!==undefined).map(w=>({ date:w['Date'], value:num(w['VFC (HRV)']) }));
+
+  const charts = [
+    healthChartCard('Poids', 'Apple Santé', poids, '#FF7A1A', 1, 'kg'),
+    healthChartCard('Masse grasse (IMG)', 'Apple Santé', img, '#FF4B45', 1, '%'),
+    healthChartCard('Récupération', 'Whoop', recup, '#35D07F', 0, '%'),
+    healthChartCard('Strain quotidien', 'Whoop', strain, '#FF7A1A', 1, ''),
+    healthChartCard('Sommeil (performance)', 'Whoop', sommeil, '#4FA9E8', 0, '%'),
+    healthChartCard('VFC (HRV)', 'Whoop', hrv, '#4FA9E8', 0, 'ms')
+  ];
 
   container.innerHTML =
     renderHealthSignalsCard(data, todayStr()) +
     correlationCardHtml() +
-    healthChartCard('Poids', 'Apple Santé', poids, '#FF7A1A', 1, 'kg') +
-    healthChartCard('Masse grasse (IMG)', 'Apple Santé', img, '#FF4B45', 1, '%') +
-    healthChartCard('Récupération', 'Whoop', recup, '#35D07F', 0, '%') +
-    healthChartCard('Strain quotidien', 'Whoop', strain, '#FF7A1A', 1, '') +
-    healthChartCard('Sommeil (performance)', 'Whoop', sommeil, '#4FA9E8', 0, '%') +
-    healthChartCard('VFC (HRV)', 'Whoop', hrv, '#4FA9E8', 0, 'ms');
+    charts.map(c=>c.html).join('');
+  charts.forEach(c=>c.mount());
   renderCorrelationAnalysis(data);
 }
 
