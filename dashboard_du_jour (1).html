@@ -598,7 +598,7 @@ body.focus-mode #focusExitBtn{ display:flex !important; }
     <br>
     <button id="pinSubmit" onclick="checkPin()">Déverrouiller</button>
     <div id="pinError"></div>
-    <div class="version-tag">v18.0</div>
+    <div class="version-tag">v18.1</div>
   </div>
 
   <div id="loadingState" style="display:none;">Chargement des données…</div>
@@ -2718,34 +2718,60 @@ function closeExerciseDetail(){
 }
 
 // --- Onglet Progression : sélection d'exercice, graphique de charge ---
-function parseExerciseEntries(seances){
-  // index : { nomExercice: [{date, kg}, ...] }
+// Fusionne les anciens noms d'exercices anglais (jamais renommés rétroactivement en base) avec les
+// nouveaux noms français utilisés depuis l'onglet "Exercices" du Sheet.
+const EXERCISE_ALIASES = {
+  'romanian deadlift - barbell': 'Soulevé de terre roumain - Barre',
+  'back squat - barbell': 'Squat arrière - Barre',
+  'bent over row - barbell': 'Rameur buste penché - Barre',
+  'overhead press - barbell': 'Développé militaire - Barre',
+  'bench press - barbell': 'Développé couché - Barre',
+  'bench fly - dumbbell': 'Écarté couché - Haltère',
+  'lateral shoulder raise - dumbbell': 'Élévation latérale des épaules - Haltère',
+  'bicep curl - barbell': 'Flexion des biceps - Barre',
+  'bicep curl - dumbbell': 'Flexion des biceps - Haltère',
+  'bicep curl - cable': 'Flexion des biceps - Poulie',
+  'hammer curl - dumbbell': 'Flexion marteau - Haltère',
+  'standing triceps extension': 'Extension triceps debout',
+  'triceps pulldown - rope': 'Extension triceps à la corde',
+  'cable face pulls': 'Face pull à la poulie',
+  'glute bridge': 'Pont fessier',
+  'reverse lunge to stand': 'Fente arrière',
+  'good morning - barbell': 'Good Morning - Barre',
+  'hanging knee raises': 'Relevés de genoux suspendu',
+  'reverse crunch machine': 'Crunch inversé machine',
+  'shrugs': "Haussements d'épaules",
+  'machine chest press': 'Développé couché machine',
+  'seated row': 'Rameur assis',
+  'goblet squat': 'Squat goblet',
+  'leg press': 'Leg Press'
+};
+function canonicalizeExerciseName(name){
+  if(!name) return name;
+  let cleaned = String(name).replace(/[–—]/g, '-').replace(/\s+/g, ' ').trim();
+  cleaned = cleaned.replace(/\s*\((?:lourd|volume|léger|leger|heavy|light)\)\s*$/i, '').trim();
+  return EXERCISE_ALIASES[cleaned.toLowerCase()] || cleaned;
+}
+
+function parseExerciseEntries(exercices){
+  // index : { nomExercice canonique : [{date, kg}, ...] } — construit directement depuis les lignes
+  // structurées "Exercices" (une ligne par série) fournies par le serveur, plus de parsing de texte libre.
+  const perDay = {}; // { name: { date: maxKg de ce jour } }
+  (exercices||[]).forEach(row=>{
+    const name = canonicalizeExerciseName(row['Exercice']);
+    if(!name) return;
+    const kg = num(row['Charge (kg)']);
+    if(kg===null) return;
+    const date = row['Date'];
+    if(!perDay[name]) perDay[name] = {};
+    if(perDay[name][date]===undefined || kg > perDay[name][date]) perDay[name][date] = kg;
+  });
   const index = {};
-  seances.forEach(s=>{
-    if(!s['Détail Exercices']) return;
-    String(s['Détail Exercices']).split('\n').forEach(line=>{
-      const structured = parseSeanceExerciseLine(line);
-      if(structured){
-        const charges = structured.sets.map(st=>st.charge).filter(c=>c!==null && c>0);
-        if(!charges.length) return; // exercice au poids du corps (charges à 0), pas de charge à tracer
-        if(!index[structured.name]) index[structured.name] = [];
-        index[structured.name].push({ date: s['Date'], kg: Math.max(...charges) });
-        return;
-      }
-      // repli pour un format non structuré (ancien historique éventuel) : max de toutes les valeurs "N kg" de la ligne
-      const m = line.match(/^-\s*([^:]+?)\s*:\s*(.+)$/);
-      if(!m) return;
-      const name = m[1].trim();
-      const rest = m[2];
-      // retire "total X kg" avant d'extraire les charges, sinon le tonnage total est capturé comme charge max
-      const restSansTotal = rest.replace(/total\s*[:=]?\s*\d+(?:[.,]\d+)?\s*kg/gi, '');
-      const kgMatches = [...restSansTotal.matchAll(/(\d+(?:[.,]\d+)?)\s*kg/gi)].map(x=>parseFloat(x[1].replace(',','.')));
-      if(!kgMatches.length) return;
-      const maxKg = Math.max(...kgMatches);
-      if(maxKg <= 0) return;
-      if(!index[name]) index[name] = [];
-      index[name].push({ date: s['Date'], kg: maxKg });
-    });
+  Object.keys(perDay).forEach(name=>{
+    const entries = Object.entries(perDay[name]).map(([date,kg])=>({ date, kg }));
+    const maxKg = Math.max(...entries.map(e=>e.kg));
+    if(maxKg <= 0) return; // exercice au poids du corps uniquement (planche, pompes...) : exclu du sélecteur de progression
+    index[name] = entries;
   });
   return index;
 }
@@ -2857,8 +2883,8 @@ function renderMuscleVolumeSection(data){
 }
 
 function renderProgressionSetup(data){
-  const seances = data.seances || [];
-  const index = parseExerciseEntries(seances);
+  const exercicesRows = data.exercices || [];
+  const index = parseExerciseEntries(exercicesRows);
   window.EXO_INDEX = index;
   const select = document.getElementById('exoSelect');
   const names = Object.keys(index);
@@ -2867,16 +2893,25 @@ function renderProgressionSetup(data){
     document.getElementById('chartWrap').innerHTML = '<div class="chart-empty">Logge quelques séances avec des charges pour voir apparaître ta progression ici</div>';
     return;
   }
-  const groupOrder = ['Jambes','Poitrine','Dos','Épaules','Bras','Abdos & Core','Cardio','Autre'];
+  // Le muscle principal est fourni directement par le serveur pour chaque ligne — on associe au nom
+  // canonique la valeur de sa première ligne rencontrée (cohérente pour un même exercice dans les données).
+  const muscleByName = {};
+  exercicesRows.forEach(row=>{
+    const name = canonicalizeExerciseName(row['Exercice']);
+    if(name && !muscleByName[name]) muscleByName[name] = row['Muscle Principal'] || 'Autre';
+  });
   const grouped = {};
   names.forEach(n=>{
-    const cat = categorizeExercise(n);
+    const cat = muscleByName[n] || 'Autre';
     if(!grouped[cat]) grouped[cat] = [];
     grouped[cat].push(n);
   });
-  select.innerHTML = groupOrder.filter(g=>grouped[g]).map(g=>{
+  const knownGroups = MUSCLE_GROUPS_ORDER.filter(g=>g!=='Autre' && grouped[g]);
+  const otherGroups = Object.keys(grouped).filter(g=>!MUSCLE_GROUPS_ORDER.includes(g)).sort();
+  const orderedGroups = [...knownGroups, ...otherGroups, ...(grouped['Autre'] ? ['Autre'] : [])];
+  select.innerHTML = orderedGroups.map(g=>{
     const opts = grouped[g].sort((a,b)=>index[b].length-index[a].length)
-      .map(n=>`<option value="${n}">${n} (${index[n].length})</option>`).join('');
+      .map(n=>`<option value="${escAttr(n)}">${n} (${index[n].length})</option>`).join('');
     return `<optgroup label="${g}">${opts}</optgroup>`;
   }).join('');
   renderExoChart();
