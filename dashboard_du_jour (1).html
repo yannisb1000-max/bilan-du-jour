@@ -610,7 +610,7 @@ body.focus-mode #focusExitBtn{ display:flex !important; }
     <br>
     <button id="pinSubmit" onclick="checkPin()">Déverrouiller</button>
     <div id="pinError"></div>
-    <div class="version-tag">v18.5</div>
+    <div class="version-tag">v18.6</div>
   </div>
 
   <div id="loadingState" style="display:none;">Chargement des données…</div>
@@ -877,9 +877,10 @@ body.focus-mode #focusExitBtn{ display:flex !important; }
 
     <!-- ============ PAGE : HISTORIQUE ============ -->
     <div class="page" id="page-history">
-      <button class="quick-btn emerald" style="width:100%; justify-content:center; margin-bottom:14px; cursor:pointer; border:1px solid var(--hairline-strong);" onclick="shareHistoryCard()">
-        <span class="dot"></span>Partager mon training log
-      </button>
+      <div class="quick-actions" style="margin-bottom:14px;">
+        <button class="quick-btn emerald" style="justify-content:center; cursor:pointer; border:1px solid var(--hairline-strong);" onclick="shareHistoryCard()"><span class="dot"></span>Partager mon training log</button>
+        <button class="quick-btn emerald" id="chatgptContextBtn" style="justify-content:center; cursor:pointer; border:1px solid var(--hairline-strong);" onclick="generateChatGPTContext()"><span class="dot"></span>Copier le contexte pour ChatGPT</button>
+      </div>
       <div class="card fade-in">
         <p class="eyebrow"><span class="dot"></span>Constance (30 jours)</p>
         <div class="heatmap-grid" id="heatmapGrid"></div>
@@ -3916,6 +3917,150 @@ async function shareHistoryCard(){
       URL.revokeObjectURL(url);
     }
   }, 'image/png');
+}
+
+function fmtDMY(dateStr){
+  const [Y,M,D] = dateStr.split('-');
+  return { dm: `${D}/${M}`, dmy: `${D}/${M}/${Y}` };
+}
+function formatKgFr(kg){
+  return Number.isInteger(kg) ? String(kg) : String(kg).replace('.', ',');
+}
+
+// --- Construit un contexte texte structuré (entraînement, volume, progression, ressenti, récupération, repas)
+// pensé pour être collé directement dans une conversation ChatGPT, et le copie dans le presse-papiers.
+async function generateChatGPTContext(){
+  const btn = document.getElementById('chatgptContextBtn');
+  if(!LAST_DATA){ return; }
+  const data = LAST_DATA;
+  const seances = data.seances || [];
+  const exercices = data.exercices || [];
+  const whoop = data.whoop || [];
+  const repasLog = data.repas_log || [];
+  const today = todayStr();
+  const lines = [];
+
+  // --- Dernière séance loggée ---
+  const lastSeance = seances.slice().filter(s=>s['Type'] && String(s['Type']).trim())
+    .sort((a,b)=> a['Date']<b['Date']?1:-1)[0];
+  lines.push('DERNIÈRE SÉANCE');
+  if(lastSeance){
+    const daysAgo = Math.round((new Date(today+'T00:00:00') - new Date(lastSeance['Date']+'T00:00:00')) / 86400000);
+    const agoTxt = daysAgo<=0 ? "aujourd'hui" : `il y a ${daysAgo} jour${daysAgo>1?'s':''}`;
+    lines.push(`${lastSeance['Type']} — ${fmtDMY(lastSeance['Date']).dmy} (${agoTxt})`);
+  } else {
+    lines.push('Aucune séance loggée.');
+  }
+  lines.push('');
+
+  // --- Volume par muscle principal (nombre de séries = nombre de lignes data.exercices) sur 7j et 14j ---
+  lines.push('VOLUME PAR MUSCLE (séries de travail)');
+  const start7 = addDays(today, -6), start14 = addDays(today, -13);
+  const volByMuscle = {};
+  exercices.forEach(row=>{
+    const muscle = row['Muscle Principal'] || 'Autre';
+    const d = row['Date'];
+    if(!volByMuscle[muscle]) volByMuscle[muscle] = { d7:0, d14:0 };
+    if(d>=start14 && d<=today) volByMuscle[muscle].d14++;
+    if(d>=start7 && d<=today) volByMuscle[muscle].d7++;
+  });
+  const orderedMuscles = [...MUSCLE_GROUPS_ORDER.filter(g=>volByMuscle[g]), ...Object.keys(volByMuscle).filter(g=>!MUSCLE_GROUPS_ORDER.includes(g)).sort()]
+    .filter(g=>volByMuscle[g].d7>0 || volByMuscle[g].d14>0);
+  if(orderedMuscles.length){
+    orderedMuscles.forEach(g=> lines.push(`${g} : ${volByMuscle[g].d7} (7j) / ${volByMuscle[g].d14} (14j)`));
+  } else {
+    lines.push('Aucune série loggée sur les 14 derniers jours.');
+  }
+  lines.push('');
+
+  // --- Progression de charge sur les exercices les plus fréquents ---
+  lines.push('PROGRESSION RÉCENTE');
+  const exoIndex = parseExerciseEntries(exercices);
+  const freqRanked = Object.entries(exoIndex).sort((a,b)=>b[1].length-a[1].length).slice(0,6);
+  if(freqRanked.length){
+    freqRanked.forEach(([name, entries])=>{
+      const lastThree = entries.slice().sort((a,b)=>a.date<b.date?-1:1).slice(-3);
+      const txt = lastThree.map(e=>`${fmtDMY(e.date).dm} → ${formatKgFr(e.kg)}kg`).join(' | ');
+      lines.push(`${name} : ${txt}`);
+    });
+  } else {
+    lines.push('Pas assez de données de charge.');
+  }
+  lines.push('');
+
+  // --- Ressenti + répartition RIR de la dernière séance ---
+  lines.push('RESSENTI DERNIÈRE SÉANCE');
+  if(lastSeance){
+    const ressentiFields = [
+      ['Difficulté','Difficulté'], ['Plaisir','Plaisir'], ['Énergie','Énergie'],
+      ['Fatigue Musculaire','Fatigue musculaire'], ['Fatigue Nerveuse','Fatigue nerveuse']
+    ];
+    const parts = ressentiFields
+      .filter(([k])=>lastSeance[k]!=='' && lastSeance[k]!==undefined)
+      .map(([k,label])=>`${label} ${lastSeance[k]}/10`);
+    lines.push(parts.length ? parts.join(', ') : 'Ressenti non renseigné.');
+
+    const rirRows = exercices.filter(r=>r['Date']===lastSeance['Date']);
+    const buckets = { 0:0, 1:0, 2:0, '3+':0 };
+    let rirCounted = 0;
+    rirRows.forEach(r=>{
+      const rir = num(r['RIR']);
+      if(rir===null) return;
+      rirCounted++;
+      buckets[rir>=3 ? '3+' : rir]++;
+    });
+    lines.push(rirCounted
+      ? `RIR : ${buckets[0]} série${buckets[0]>1?'s':''} à 0 RIR, ${buckets[1]} à 1 RIR, ${buckets[2]} à 2 RIR, ${buckets['3+']} à 3+ RIR`
+      : 'RIR non renseigné.');
+  } else {
+    lines.push('—');
+  }
+  lines.push('');
+
+  // --- Récupération Whoop du jour + moyenne des 3 jours précédents ---
+  lines.push('RÉCUPÉRATION');
+  const wToday = whoop.find(w=>w['Date']===today);
+  const recupToday = (wToday && wToday['Récupération %']!=='') ? num(wToday['Récupération %']) : null;
+  const recup3vals = [1,2,3].map(n=>{
+    const w = whoop.find(x=>x['Date']===addDays(today,-n));
+    return (w && w['Récupération %']!=='' && w['Récupération %']!==undefined) ? num(w['Récupération %']) : null;
+  }).filter(v=>v!==null);
+  const avg3 = recup3vals.length ? recup3vals.reduce((a,b)=>a+b,0)/recup3vals.length : null;
+  if(recupToday!==null){
+    lines.push(`Aujourd'hui : ${Math.round(recupToday)}%${avg3!==null ? ` (moyenne 3j : ${Math.round(avg3)}%)` : ''}`);
+  } else {
+    lines.push(avg3!==null ? `Donnée du jour indisponible (moyenne 3j : ${Math.round(avg3)}%)` : 'Donnée indisponible.');
+  }
+
+  // --- Repas du jour (si présents) ---
+  const mealsToday = repasLog.filter(r=>r['Date']===today);
+  if(mealsToday.length){
+    lines.push('');
+    lines.push('REPAS DU JOUR');
+    let totalCal=0, totalProt=0, totalLip=0, totalGlu=0;
+    mealsToday.forEach(m=>{
+      const cal=num(m['Calories'])||0, prot=num(m['Protéines'])||0, lip=num(m['Lipides'])||0, glu=num(m['Glucides'])||0;
+      totalCal+=cal; totalProt+=prot; totalLip+=lip; totalGlu+=glu;
+      lines.push(`${m['Type Repas']||'Repas'} : ${m['Description']||''} (${Math.round(cal)} kcal)`);
+    });
+    lines.push(`Total : ${Math.round(totalCal)} kcal · ${totalProt.toFixed(0)}g protéines · ${totalGlu.toFixed(0)}g glucides · ${totalLip.toFixed(0)}g lipides`);
+  }
+
+  const text = lines.join('\n').trim() + '\n';
+
+  function flashBtn(label, ms){
+    if(!btn) return;
+    const original = btn.innerHTML;
+    btn.innerHTML = `<span class="dot"></span>${label}`;
+    setTimeout(()=>{ btn.innerHTML = original; }, ms || 1800);
+  }
+  try{
+    await navigator.clipboard.writeText(text);
+    flashBtn('Copié !');
+  }catch(e){
+    flashBtn('Échec de la copie');
+  }
+  return text;
 }
 
 function toggleDay(dateKey){
