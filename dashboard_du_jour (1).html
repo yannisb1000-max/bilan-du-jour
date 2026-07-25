@@ -610,7 +610,7 @@ body.focus-mode #focusExitBtn{ display:flex !important; }
     <br>
     <button id="pinSubmit" onclick="checkPin()">Déverrouiller</button>
     <div id="pinError"></div>
-    <div class="version-tag">v18.4</div>
+    <div class="version-tag">v18.5</div>
   </div>
 
   <div id="loadingState" style="display:none;">Chargement des données…</div>
@@ -877,6 +877,9 @@ body.focus-mode #focusExitBtn{ display:flex !important; }
 
     <!-- ============ PAGE : HISTORIQUE ============ -->
     <div class="page" id="page-history">
+      <button class="quick-btn emerald" style="width:100%; justify-content:center; margin-bottom:14px; cursor:pointer; border:1px solid var(--hairline-strong);" onclick="shareHistoryCard()">
+        <span class="dot"></span>Partager mon training log
+      </button>
       <div class="card fade-in">
         <p class="eyebrow"><span class="dot"></span>Constance (30 jours)</p>
         <div class="heatmap-grid" id="heatmapGrid"></div>
@@ -3810,6 +3813,105 @@ async function shareSeanceCard(){
     } else {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a'); a.href=url; a.download=`seance-${openSeanceDate}.png`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+  }, 'image/png');
+}
+
+const HISTORY_SHARE_LIMIT = 10;
+async function shareHistoryCard(){
+  if(!LAST_DATA) return;
+  await document.fonts.ready;
+
+  const seances = (LAST_DATA.seances||[]).filter(s=>s['Type'] && String(s['Type']).trim());
+  const last = seances.slice().sort((a,b)=> a['Date']<b['Date']?1:-1).slice(0, HISTORY_SHARE_LIMIT);
+  const prCountOf = s => s['PRs'] ? String(s['PRs']).split('\n').map(l=>l.trim()).filter(Boolean).length : 0;
+
+  const W = 1080, MARGIN = 100;
+  const HEADER_H = 110 + 58 + 40 + 70;
+  const ROW_H = 96, ROW_PR_EXTRA = 34, FOOTER_H = 140, EMPTY_H = 200;
+  let H = HEADER_H + FOOTER_H;
+  if(last.length) last.forEach(s => { H += ROW_H + (prCountOf(s)>0 ? ROW_PR_EXTRA : 0); });
+  else H += EMPTY_H;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#050505'; ctx.fillRect(0,0,W,H);
+  const grad = ctx.createRadialGradient(540,-100,100,540,300,700);
+  grad.addColorStop(0,'rgba(255,122,26,0.22)'); grad.addColorStop(1,'rgba(255,122,26,0)');
+  ctx.fillStyle = grad; ctx.fillRect(0,0,W,700);
+
+  let y = 110;
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#FF7A1A';
+  ctx.font = '700 26px "Space Grotesk", sans-serif';
+  ctx.fillText('TRAINING LOG', W/2, y);
+
+  y += 58;
+  ctx.fillStyle = '#FFFFFF';
+  ctx.font = '500 40px "Fraunces", serif';
+  ctx.fillText(last.length ? `${last.length} dernière${last.length>1?'s':''} séance${last.length>1?'s':''}` : 'Aucune séance', W/2, y);
+
+  y += 40;
+  ctx.font = '500 22px "Space Grotesk", sans-serif'; ctx.fillStyle = '#9B9B9B';
+  ctx.fillText(fmtDateLabel(todayStr()), W/2, y);
+
+  y += 70;
+  ctx.beginPath(); ctx.moveTo(MARGIN,y); ctx.lineTo(W-MARGIN,y); ctx.strokeStyle='rgba(255,255,255,0.08)'; ctx.lineWidth=1; ctx.stroke();
+
+  if(!last.length){
+    y += 100;
+    ctx.font = '500 24px "Space Grotesk", sans-serif'; ctx.fillStyle = '#9B9B9B';
+    ctx.fillText('Aucune séance loggée pour le moment', W/2, y);
+  } else {
+    y += 56;
+    last.forEach(s=>{
+      const { day, month } = fmtShort(s['Date']);
+      const strain = num(s['Strain Séance']);
+      const tonnage = num(s['Tonnage Total']);
+      const duree = num(s['Durée (min)']);
+      const prCount = prCountOf(s);
+
+      ctx.textAlign='left';
+      ctx.font = '700 22px "IBM Plex Mono", monospace'; ctx.fillStyle = '#9B9B9B';
+      ctx.fillText(`${day} ${month}`.toUpperCase(), MARGIN, y);
+
+      ctx.font = '700 26px "Space Grotesk", sans-serif'; ctx.fillStyle = '#FFFFFF';
+      ctx.fillText(s['Type'], MARGIN + 150, y);
+
+      ctx.textAlign='right';
+      ctx.font = '600 20px "IBM Plex Mono", monospace'; ctx.fillStyle = '#B8B8B8';
+      const statsTxt = `${strain!==null?strain:'—'} strain · ${tonnage!==null?Math.round(tonnage):'—'}kg · ${duree!==null?Math.round(duree):'—'}min`;
+      ctx.fillText(statsTxt, W-MARGIN, y);
+
+      y += 36;
+      if(prCount>0){
+        ctx.textAlign='left';
+        ctx.font = '600 20px "Space Grotesk", sans-serif'; ctx.fillStyle = '#F5D26B';
+        ctx.fillText(`🏅 ${prCount} PR${prCount>1?'s':''}`, MARGIN + 150, y);
+        y += ROW_PR_EXTRA;
+      }
+
+      y += ROW_H - 36;
+      ctx.beginPath(); ctx.moveTo(MARGIN,y-24); ctx.lineTo(W-MARGIN,y-24);
+      ctx.strokeStyle='rgba(255,255,255,0.06)'; ctx.lineWidth=1; ctx.stroke();
+    });
+  }
+
+  ctx.textAlign = 'center';
+  ctx.font='600 20px "Space Grotesk", sans-serif'; ctx.fillStyle='#545454';
+  ctx.fillText('performance-journal', W/2, H-50);
+
+  canvas.toBlob(blob=>{
+    const dateStr = todayStr();
+    const file = new File([blob], `training-log-${dateStr}.png`, { type:'image/png' });
+    if(navigator.canShare && navigator.canShare({ files:[file] })){
+      navigator.share({ files:[file], title:'Training Log', text:`Mes ${last.length} dernières séances` }).catch(()=>{});
+    } else {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href=url; a.download=`training-log-${dateStr}.png`;
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       URL.revokeObjectURL(url);
     }
