@@ -610,7 +610,7 @@ body.focus-mode #focusExitBtn{ display:flex !important; }
     <br>
     <button id="pinSubmit" onclick="checkPin()">Déverrouiller</button>
     <div id="pinError"></div>
-    <div class="version-tag">v18.6</div>
+    <div class="version-tag">v18.7</div>
   </div>
 
   <div id="loadingState" style="display:none;">Chargement des données…</div>
@@ -2874,21 +2874,23 @@ function canonicalizeExerciseName(name){
 }
 
 function parseExerciseEntries(exercices){
-  // index : { nomExercice canonique : [{date, kg}, ...] } — construit directement depuis les lignes
+  // index : { nomExercice canonique : [{date, kg, reps}, ...] } — construit directement depuis les lignes
   // structurées "Exercices" (une ligne par série) fournies par le serveur, plus de parsing de texte libre.
-  const perDay = {}; // { name: { date: maxKg de ce jour } }
+  // reps correspond aux répétitions de la série la plus lourde du jour (celle qui fixe kg).
+  const perDay = {}; // { name: { date: { kg, reps } } }
   (exercices||[]).forEach(row=>{
     const name = canonicalizeExerciseName(row['Exercice']);
     if(!name) return;
     const kg = num(row['Charge (kg)']);
     if(kg===null) return;
     const date = row['Date'];
+    const reps = num(row['Répétitions']);
     if(!perDay[name]) perDay[name] = {};
-    if(perDay[name][date]===undefined || kg > perDay[name][date]) perDay[name][date] = kg;
+    if(perDay[name][date]===undefined || kg > perDay[name][date].kg) perDay[name][date] = { kg, reps };
   });
   const index = {};
   Object.keys(perDay).forEach(name=>{
-    const entries = Object.entries(perDay[name]).map(([date,kg])=>({ date, kg }));
+    const entries = Object.entries(perDay[name]).map(([date,v])=>({ date, kg:v.kg, reps:v.reps }));
     const maxKg = Math.max(...entries.map(e=>e.kg));
     if(maxKg <= 0) return; // exercice au poids du corps uniquement (planche, pompes...) : exclu du sélecteur de progression
     index[name] = entries;
@@ -3980,7 +3982,7 @@ async function generateChatGPTContext(){
   if(freqRanked.length){
     freqRanked.forEach(([name, entries])=>{
       const lastThree = entries.slice().sort((a,b)=>a.date<b.date?-1:1).slice(-3);
-      const txt = lastThree.map(e=>`${fmtDMY(e.date).dm} → ${formatKgFr(e.kg)}kg`).join(' | ');
+      const txt = lastThree.map(e=>`${fmtDMY(e.date).dm} → ${formatKgFr(e.kg)}kg${e.reps!==null ? ' x'+e.reps : ''}`).join(' | ');
       lines.push(`${name} : ${txt}`);
     });
   } else {
