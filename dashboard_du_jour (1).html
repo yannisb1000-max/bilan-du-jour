@@ -610,7 +610,7 @@ body.focus-mode #focusExitBtn{ display:flex !important; }
     <br>
     <button id="pinSubmit" onclick="checkPin()">Déverrouiller</button>
     <div id="pinError"></div>
-    <div class="version-tag">v18.7</div>
+    <div class="version-tag">v18.8</div>
   </div>
 
   <div id="loadingState" style="display:none;">Chargement des données…</div>
@@ -963,9 +963,14 @@ body.focus-mode #focusExitBtn{ display:flex !important; }
     <button class="sd-icon-btn" onclick="closeSeanceDetail()" aria-label="Retour">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
     </button>
-    <button class="sd-icon-btn" onclick="shareSeanceCard()" aria-label="Partager la séance">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 12v7a2 2 0 002 2h12a2 2 0 002-2v-7M16 6l-4-4-4 4M12 2v14"/></svg>
-    </button>
+    <div style="display:flex; gap:8px;">
+      <button class="sd-icon-btn" id="seanceExportBtn" onclick="exportSeanceText()" aria-label="Exporter la séance en texte">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+      </button>
+      <button class="sd-icon-btn" onclick="shareSeanceCard()" aria-label="Partager la séance">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 12v7a2 2 0 002 2h12a2 2 0 002-2v-7M16 6l-4-4-4 4M12 2v14"/></svg>
+      </button>
+    </div>
   </div>
   <div class="wrap" id="seanceDetailContent"></div>
 </div>
@@ -3555,17 +3560,19 @@ function openSeanceDetail(dateStr){
     ['Fatigue musculaire', num(s['Fatigue Musculaire']), 'var(--rust)'],
     ['Fatigue nerveuse', num(s['Fatigue Nerveuse']), 'var(--rust)'],
   ].filter(([,v])=>v!==null);
+  const rirLine = formatRIRLine((LAST_DATA.exercices||[]).filter(r=>r['Date']===dateStr));
 
-  const metersHtml = meters.length ? `
+  const metersHtml = (meters.length || rirLine) ? `
     <div class="card fade-in">
       <p class="eyebrow"><span class="dot"></span>Ressenti</p>
-      <div class="score-breakdown">
+      ${meters.length ? `<div class="score-breakdown">
         ${meters.map(([label,val,color])=>`
           <div>
             <div class="score-item-head"><span class="si-label">${label}</span><span class="si-raw mono">${val}/10</span></div>
             <div class="progress-track"><div class="progress-fill" style="width:${Math.max(0,Math.min(100,val*10))}%; background:${color};"></div></div>
           </div>`).join('')}
-      </div>
+      </div>` : ''}
+      ${rirLine ? `<div class="poids-note" style="margin-top:${meters.length?12:0}px;">${rirLine}</div>` : ''}
     </div>` : '';
 
   const prHtml = (s['PRs'] && String(s['PRs']).trim()) ? `
@@ -3822,6 +3829,80 @@ async function shareSeanceCard(){
   }, 'image/png');
 }
 
+// --- Export texte d'une séance unique (contexte complet : stats, ressenti, RIR, exercices, records),
+// copié dans le presse-papiers — même principe que generateChatGPTContext() mais pour une séance précise.
+async function exportSeanceText(){
+  if(!LAST_DATA || !openSeanceDate) return;
+  const s = (LAST_DATA.seances||[]).find(x=>x['Date']===openSeanceDate);
+  if(!s) return;
+  const exercicesRows = (LAST_DATA.exercices||[]).filter(r=>r['Date']===openSeanceDate);
+  const lines = [];
+
+  const daysAgo = Math.round((new Date(todayStr()+'T00:00:00') - new Date(openSeanceDate+'T00:00:00')) / 86400000);
+  const agoTxt = daysAgo<=0 ? "aujourd'hui" : daysAgo===1 ? 'hier' : `il y a ${daysAgo} jours`;
+  lines.push('SÉANCE');
+  lines.push(`${s['Type']||'Séance'} — ${fmtDMY(openSeanceDate).dmy} (${agoTxt})`);
+  lines.push('');
+
+  lines.push('STATS');
+  const strain = num(s['Strain Séance']), calories = num(s['Calories']), duree = num(s['Durée (min)']), tonnage = num(s['Tonnage Total']);
+  lines.push(`Strain ${strain!==null?strain:'—'} · ${calories!==null?Math.round(calories):'—'} kcal · ${duree!==null?Math.round(duree):'—'} min · ${tonnage!==null?Math.round(tonnage):'—'} kg total`);
+  lines.push('');
+
+  lines.push('RESSENTI');
+  const ressentiFields = [
+    ['Difficulté','Difficulté'], ['Plaisir','Plaisir'], ['Énergie','Énergie'],
+    ['Fatigue Musculaire','Fatigue musculaire'], ['Fatigue Nerveuse','Fatigue nerveuse']
+  ];
+  const ressentiParts = ressentiFields
+    .filter(([k])=>s[k]!=='' && s[k]!==undefined)
+    .map(([k,label])=>`${label} ${s[k]}/10`);
+  lines.push(ressentiParts.length ? ressentiParts.join(', ') : 'Non renseigné.');
+  lines.push(formatRIRLine(exercicesRows) || 'RIR non renseigné.');
+  lines.push('');
+
+  lines.push('EXERCICES');
+  const { exercises: exoParsed, rawFallback } = parseSeanceExercises(s['Détail Exercices']);
+  if(exoParsed.length || rawFallback.length){
+    exoParsed.forEach(ex=>{
+      const setsTxt = ex.sets.map(st=>{
+        if(ex.isDuration) return st.charge ? `${st.duration} @ ${formatKgFr(st.charge)}kg` : st.duration;
+        return `${st.reps??'—'}x${st.charge!==null?formatKgFr(st.charge)+'kg':'—'}`;
+      }).join(', ');
+      const totalTxt = ex.isDuration ? formatSetDuration(ex.totalDurationSec) : `${ex.totalReps} reps`;
+      lines.push(`${ex.name} : ${setsTxt} (total ${totalTxt}, ${formatKgFr(ex.total)}kg)`);
+    });
+    rawFallback.forEach(line=>lines.push(line));
+  } else {
+    lines.push('Aucun détail disponible.');
+  }
+
+  if(s['PRs'] && String(s['PRs']).trim()){
+    lines.push('');
+    lines.push('RECORDS');
+    String(s['PRs']).split('\n').map(l=>l.replace(/^-\s*/,'').trim()).filter(Boolean).forEach(l=>lines.push(`🏅 ${l}`));
+  }
+
+  const text = lines.join('\n').trim() + '\n';
+
+  const btn = document.getElementById('seanceExportBtn');
+  const original = btn ? btn.innerHTML : null;
+  function flash(iconSvg){
+    if(!btn) return;
+    btn.innerHTML = iconSvg;
+    setTimeout(()=>{ btn.innerHTML = original; }, 1500);
+  }
+  const checkIcon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>';
+  const errIcon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 9v4M12 17h.01"/></svg>';
+  try{
+    await navigator.clipboard.writeText(text);
+    flash(checkIcon);
+  }catch(e){
+    flash(errIcon);
+  }
+  return text;
+}
+
 const HISTORY_SHARE_LIMIT = 10;
 async function shareHistoryCard(){
   if(!LAST_DATA) return;
@@ -3928,6 +4009,24 @@ function fmtDMY(dateStr){
 function formatKgFr(kg){
   return Number.isInteger(kg) ? String(kg) : String(kg).replace('.', ',');
 }
+// Répartition RIR (0/1/2/3+) sur un ensemble de lignes data.exercices — partagée entre l'export ChatGPT,
+// la fiche séance et l'export texte d'une séance, pour ne pas dupliquer la logique de comptage.
+function computeRIRBuckets(exercicesRows){
+  const buckets = { 0:0, 1:0, 2:0, '3+':0 };
+  let total = 0;
+  (exercicesRows||[]).forEach(r=>{
+    const rir = num(r['RIR']);
+    if(rir===null) return;
+    total++;
+    buckets[rir>=3 ? '3+' : rir]++;
+  });
+  return { buckets, total };
+}
+function formatRIRLine(exercicesRows){
+  const { buckets, total } = computeRIRBuckets(exercicesRows);
+  if(!total) return null;
+  return `RIR : ${buckets[0]} série${buckets[0]>1?'s':''} à 0 RIR, ${buckets[1]} à 1 RIR, ${buckets[2]} à 2 RIR, ${buckets['3+']} à 3+ RIR`;
+}
 
 // --- Construit un contexte texte structuré (entraînement, volume, progression, ressenti, récupération, repas)
 // pensé pour être collé directement dans une conversation ChatGPT, et le copie dans le presse-papiers.
@@ -4003,17 +4102,7 @@ async function generateChatGPTContext(){
     lines.push(parts.length ? parts.join(', ') : 'Ressenti non renseigné.');
 
     const rirRows = exercices.filter(r=>r['Date']===lastSeance['Date']);
-    const buckets = { 0:0, 1:0, 2:0, '3+':0 };
-    let rirCounted = 0;
-    rirRows.forEach(r=>{
-      const rir = num(r['RIR']);
-      if(rir===null) return;
-      rirCounted++;
-      buckets[rir>=3 ? '3+' : rir]++;
-    });
-    lines.push(rirCounted
-      ? `RIR : ${buckets[0]} série${buckets[0]>1?'s':''} à 0 RIR, ${buckets[1]} à 1 RIR, ${buckets[2]} à 2 RIR, ${buckets['3+']} à 3+ RIR`
-      : 'RIR non renseigné.');
+    lines.push(formatRIRLine(rirRows) || 'RIR non renseigné.');
   } else {
     lines.push('—');
   }
