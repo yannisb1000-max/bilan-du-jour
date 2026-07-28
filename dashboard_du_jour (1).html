@@ -610,7 +610,7 @@ body.focus-mode #focusExitBtn{ display:flex !important; }
     <br>
     <button id="pinSubmit" onclick="checkPin()">Déverrouiller</button>
     <div id="pinError"></div>
-    <div class="version-tag">v18.8</div>
+    <div class="version-tag">v18.9</div>
   </div>
 
   <div id="loadingState" style="display:none;">Chargement des données…</div>
@@ -730,6 +730,7 @@ body.focus-mode #focusExitBtn{ display:flex !important; }
             <div class="vital-delta" id="sommeilDelta"></div>
           </div>
         </div>
+        <div class="poids-note" id="vitalsStaleNote" style="margin-top:10px;"></div>
       </div>
 
       <div class="card fade-in">
@@ -2078,12 +2079,19 @@ function renderToday(data){
   const repasLog = data.repas_log || [], repasPlan = data.repas_plan || [], recommandation = data.recommandation || [], bilans = data.bilans || [];
 
   const whoopToday = whoop.find(w => w['Date']===today);
-  const recup = whoopToday ? num(whoopToday['Récupération %']) : null;
-  const strain = whoopToday ? num(whoopToday['Strain Jour']) : null;
-  const sommeil = whoopToday ? num(whoopToday['Sommeil Perf %']) : null;
+  // Le cycle Whoop du jour peut ne pas encore être synchronisé/dérivé au moment de la consultation.
+  // Pour les Vitals (affichage brut, pas une recommandation), on retombe sur la dernière journée
+  // disponible plutôt que d'afficher des "—" partout, avec une mention explicite de sa date — jamais
+  // fait passer une donnée d'un autre jour pour celle d'aujourd'hui sans le dire.
+  const whoopTodayHasData = whoopToday && whoopToday['Récupération %']!=='' && whoopToday['Récupération %']!==undefined;
+  const whoopDisplay = whoopTodayHasData ? whoopToday : whoop.slice().reverse().find(w=>w['Récupération %']!=='' && w['Récupération %']!==undefined);
+  const recup = whoopDisplay ? num(whoopDisplay['Récupération %']) : null;
+  const strain = whoopDisplay ? num(whoopDisplay['Strain Jour']) : null;
+  const sommeil = whoopDisplay ? num(whoopDisplay['Sommeil Perf %']) : null;
   document.getElementById('recupVal').textContent = recup!==null ? Math.round(recup) : '—';
   document.getElementById('strainVal').textContent = strain!==null ? strain : '—';
   document.getElementById('sommeilVal').textContent = sommeil!==null ? Math.round(sommeil) : '—';
+  document.getElementById('vitalsStaleNote').textContent = (whoopDisplay && whoopDisplay['Date']!==today) ? `Dernières données Whoop disponibles : ${fmtDateLabel(whoopDisplay['Date'])}` : '';
   setRing('ringRecup', recup!==null ? recup : 0);
   setRing('ringStrain', strain!==null ? (strain/21)*100 : 0);
   setRing('ringSommeil', sommeil!==null ? sommeil : 0);
@@ -2242,8 +2250,11 @@ function renderToday(data){
   const yesterday = seances.find(s=>s['Date']===addDays(today,-1));
   const fatigueNervHier = yesterday ? num(yesterday['Fatigue Nerveuse']) : null;
   const deficitToday = (depense!==null && mange!==null) ? depense - mange : null;
+  // Strictement la récupération d'aujourd'hui (pas le repli d'affichage des Vitals) : une alerte "jour à
+  // risque" basée sur la donnée d'un autre jour induirait en erreur sur l'état réel du jour courant.
+  const recupStrict = whoopToday ? num(whoopToday['Récupération %']) : null;
   const risks = [];
-  if(recup!==null && recup < 40) risks.push('récupération basse (<40%)');
+  if(recupStrict!==null && recupStrict < 40) risks.push('récupération basse (<40%)');
   if(fatigueNervHier!==null && fatigueNervHier >= 8) risks.push('fatigue nerveuse élevée hier');
   if(deficitToday!==null && deficitToday > 1000) risks.push('déficit calorique très agressif aujourd\'hui');
   const riskBanner = document.getElementById('riskBanner');
